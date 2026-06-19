@@ -1,108 +1,109 @@
 # LabelPlusX
 
-LabelPlusX is a modern multi-platform LabelPlus client for manga, comic, and image-based translation workflows.
+LabelPlusX 是一个现代化、多平台的 LabelPlus 客户端，面向漫画、条漫、图片翻译等工作流。
 
-It keeps compatibility with the legacy LabelPlus `txt` workspace format, while replacing the original mode-heavy desktop workflow with a more direct editor that works on both desktop and web.
+它兼容旧版 LabelPlus 的 `txt` 工作区格式，同时把原本偏传统、偏模式化的桌面流程，改造成一套同时支持桌面端和 Web 的直接交互式编辑体验。
 
-## Targets
+## 支持目标
 
-- Tauri desktop app for macOS, Linux, and Windows
-- Web build for self-hosting
-- GitHub Pages deployment for the web version
-- Docker image for self-hosted web deployment
+- 基于 Tauri 的桌面端应用：macOS / Linux / Windows
+- 可自部署的 Web 版本
+- GitHub Pages 部署
+- Docker 自部署镜像
 
-## What It Does
+## 项目能力
 
-- Open existing legacy LabelPlus `txt` workspaces
-- Create new workspaces from images
-- Preview images with zoom, pan, and marker editing
-- Add, move, and delete labels directly on the image
-- Edit translation text with QuickText shortcuts
-- Manage groups, comments, and check-mode reading layouts
-- Save back to the original desktop `txt` file or browser local storage
+- 打开旧版 LabelPlus `txt` 工作区
+- 从图片新建工作区
+- 图片预览、缩放、平移、marker 编辑
+- 直接在图片上新增、拖动、删除 label
+- 使用 QuickText 快速录入短语
+- 管理分组、备注、检查模式
+- 桌面端回写原始 `txt`，Web 端保存到本地存储
 
-## Main Features
+## 主要功能
 
-### Workspace
+### 工作区
 
-- Compatible with the original LabelPlus text format
-- Create a new workspace from selected images in Web mode
-- Create a new workspace from a project folder in Tauri mode
-- Auto-generate a new `translation.txt` style workspace file for desktop projects
-- Keep group definitions and comments inside the workspace
+- 兼容旧版 LabelPlus 文本格式
+- Web 模式下可直接从图片新建工作区
+- Tauri 模式下可从项目文件夹新建工作区
+- 桌面端自动生成 `translation.txt` 风格的工作文件
+- 保留分组定义与备注信息
 
-### Image Preview
+### 图片预览
 
-- Mouse wheel zoom
-- Drag to pan
-- Double click blank area to create a label
-- Right click a label to delete it
-- Drag labels to update marker positions
-- Single click selects a label
-- Double click centers the preview on the label
+- 滚轮缩放
+- 拖动画面平移
+- 双击空白处新增 label
+- 右键 label 删除
+- 拖动 label 调整坐标
+- 单击 label 选中
+- 双击 label 自动居中到该标签
 
-### Translation Editing
+### 翻译编辑
 
-- Single-line translation list for faster scanning
-- Current label editor with category switching
-- Quick jump to untranslated entries
-- Undo / redo support
-- Keyboard-driven workflow for switching files, labels, and views
+- 单行式翻译列表，便于快速扫读
+- 当前标签文本编辑区
+- 当前标签分类切换
+- 快速跳到未翻译条目
+- 支持撤销 / 重做
+- 键盘流友好，适合连续录入
 
 ### QuickText
 
-- Insert preset short phrases into the current text box
-- Open QuickText from the preview and create a label directly at the pointer position
-- Customizable phrases and keys in settings
-- Works with `Option + A` on macOS and `Alt + A` on other platforms
+- 向当前文本框快速插入短语
+- 在预览图上直接落点创建带短语的新 label
+- 可在设置页自定义短语与按键
+- macOS 使用 `Option + A`，其他平台使用 `Alt + A`
 
-### Check Mode
+### 检查模式
 
-- Toggle between normal editing and check view
-- Horizontal and vertical reading layouts
-- Adjustable check-mode font size
-- Text overlay directly on the preview image
+- 正常编辑与检查视图切换
+- 支持横排 / 竖排阅读布局
+- 支持检查模式字体大小调整
+- 文本直接覆盖显示在图片上
 
-### Save Behavior
+### 保存逻辑
 
-- Web: save edits to browser local storage
-- Tauri: save edits back to the original workspace `txt` file
-- Optional auto-save
+- Web：保存到浏览器本地存储
+- Tauri：保存回原始工作区 `txt` 文件
+- 支持自动保存
 
-## Platforms
+## 平台说明
 
 ### Web
 
-- Import an existing LabelPlus `txt` file
-- Link local images by filename
-- Create a new workspace by selecting images directly
-- Persist edits in browser local storage
+- 导入已有 LabelPlus `txt`
+- 手动关联本地图片
+- 直接从图片创建新工作区
+- 编辑结果保存到浏览器本地存储
 
-### Tauri Desktop
+### Tauri 桌面端
 
-- Open an existing local LabelPlus workspace
-- Create a new project by selecting a folder of images
-- Save directly back to the source `txt` file
-- Package builds for macOS, Linux, and Windows
+- 打开已有本地 LabelPlus 工作区
+- 选择项目文件夹创建新工作区
+- 直接保存回原始 `txt`
+- 可打包为 macOS / Linux / Windows 桌面程序
 
-## Keyboard Shortcuts
+## 快捷键
 
-Current shortcut behavior is documented in the in-app settings panel. The most important ones include:
+快捷键一览也可以在应用内设置面板中查看。常用快捷键包括：
 
-- `1 - 9`: switch current group
-- `Delete / Backspace`: delete selected label
-- `Cmd/Ctrl + S`: save
-- `Cmd/Ctrl + Z`, `Cmd/Ctrl + Y`: undo / redo
-- `Left / Right`: previous / next image
-- `Cmd/Ctrl + Enter`: move to the next label while editing
-- `V`: hold to temporarily hide labels
-- `R`: fit image
-- `C`: toggle check mode
-- `W`: switch reading layout
-- `Enter`: focus current label text editor
-- `Option/Alt + A`: open QuickText
+- `1 - 9`：切换当前分组
+- `Delete / Backspace`：删除当前选中 label
+- `Cmd/Ctrl + S`：保存
+- `Cmd/Ctrl + Z`、`Cmd/Ctrl + Y`：撤销 / 重做
+- `Left / Right`：上一张 / 下一张图片
+- `Cmd/Ctrl + Enter`：编辑时跳到下一条
+- `V`：按住时临时隐藏 label
+- `R`：图片适配
+- `C`：开关检查模式
+- `W`：切换阅读布局
+- `Enter`：聚焦当前标签文本框
+- `Option/Alt + A`：打开 QuickText
 
-## Tech Stack
+## 技术栈
 
 - React 19
 - TypeScript
@@ -110,36 +111,36 @@ Current shortcut behavior is documented in the in-app settings panel. The most i
 - Tauri 2
 - Rust
 
-## Project Structure
+## 项目结构
 
-- `src/`: React frontend
-- `src/lib/labelplus.ts`: legacy LabelPlus text parsing and serialization
-- `src/lib/tauri.ts`: desktop bridge helpers
-- `src-tauri/`: Tauri + Rust backend
-- `.github/workflows/`: CI, desktop builds, Docker, Pages deployment
-- `Dockerfile`: self-hosted web image build
+- `src/`：React 前端
+- `src/lib/labelplus.ts`：旧版 LabelPlus 文本解析与序列化
+- `src/lib/tauri.ts`：桌面端桥接逻辑
+- `src-tauri/`：Tauri + Rust 后端
+- `.github/workflows/`：CI、桌面构建、Docker、Pages 部署
+- `Dockerfile`：Web 自部署镜像
 
-## Development
+## 开发方式
 
-Install dependencies:
+安装依赖：
 
 ```bash
 npm ci
 ```
 
-Run the web dev server:
+启动 Web 开发：
 
 ```bash
 npm run dev
 ```
 
-Run the Tauri desktop app in development:
+启动 Tauri 桌面开发：
 
 ```bash
 npm run tauri dev
 ```
 
-Lint and build:
+检查与构建：
 
 ```bash
 npm run lint
@@ -147,142 +148,168 @@ npm run build
 cd src-tauri && cargo check
 ```
 
-## Production Build
+## 生产构建
 
-Build the web app:
+构建 Web：
 
 ```bash
 npm run build
 ```
 
-Build the desktop app bundles:
+构建桌面端安装包：
 
 ```bash
 npm run tauri build
 ```
 
-## Deployment
+## 部署
 
 ### GitHub Actions
 
-This repository includes workflows for:
+仓库内已经包含以下自动化流程：
 
-- Desktop bundle builds across major platforms
-- Docker image build and publish
-- GitHub Pages deployment for the web app
+- 桌面端多平台构建
+- Docker 镜像构建与发布
+- GitHub Pages 自动部署
 
 ### GitHub Pages
 
-The web app can be deployed to GitHub Pages through `.github/workflows/pages.yml`.
+Web 版本可通过 `.github/workflows/pages.yml` 自动部署到 GitHub Pages。
 
 ### Docker
 
-Build locally:
+本地构建：
 
 ```bash
 docker build -t labelplusx-web .
 ```
 
-Run locally:
+本地运行：
 
 ```bash
 docker run --rm -p 8080:80 labelplusx-web
 ```
 
-Then open `http://localhost:8080`.
+然后访问 `http://localhost:8080`。
 
-## First Run Guide
+## Photoshop 配合使用
 
-### Web: Start From Images
+LabelPlusX 可以和原本用于 Photoshop 的导入脚本一起使用：
 
-1. Open the web app.
-2. Click `新建工作区`.
-3. Select the images you want to include.
-4. A new empty workspace will be created automatically.
-5. Double click on the image to create labels.
-6. Fill translation text in the right panel.
-7. Your edits are saved to browser local storage.
+- 仓库地址：`https://github.com/LabelPlus/PS-Script`
 
-### Web: Open Existing LabelPlus Text
+典型配合流程：
 
-1. Click `导入工作区`.
-2. Select an existing LabelPlus `txt` file.
-3. If needed, use `关联本地图片` to attach matching local images.
-4. Continue editing labels, groups, and translation text.
+1. 在 LabelPlusX 中创建或编辑 LabelPlus `txt` 工作区。
+2. 保存或导出工作区文本。
+3. 在 Photoshop 中打开 PSD 工作流。
+4. 使用 `PS-Script` 读取 LabelPlus 文本，并在 PSD 中生成对应文字图层。
 
-### Tauri: Start a New Desktop Project
+Photoshop 脚本负责的部分：
 
-1. Launch the desktop app.
-2. Click `新建工作区`.
-3. Select a project folder that contains your source images.
-4. LabelPlusX scans the folder and creates a new workspace text file automatically.
-5. The generated workspace is opened immediately.
-6. Edit labels and save back to the original `txt` file.
+- 将 LabelPlus 文本导入 Photoshop
+- 按翻译条目生成文字图层
+- 支持按文件或分组选择性导入
+- 支持替换图源与文字格式设置
+- 支持导入时执行 Photoshop 动作
 
-### Tauri: Open Existing Desktop Project
+如果你仍然依赖 Photoshop 做最终排版，推荐分工如下：
 
-1. Click `导入工作区`.
-2. Choose an existing LabelPlus `txt` workspace.
-3. LabelPlusX loads the workspace and matching local images from the same folder.
-4. Edit and save directly back to the source file.
+- LabelPlusX：工作区管理、图片预览、label 编辑、QuickText、检查模式、保存/导出
+- PS-Script：把文本导入 PSD，并接 Photoshop 批处理流程
 
-## Typical Workflow
+## 首次使用教程
 
-### 1. Create Or Open A Workspace
+### Web：从图片开始
 
-- Web: create from images or open an existing `txt`
-- Tauri: create from a project folder or open an existing `txt`
+1. 打开 Web 版本。
+2. 点击 `新建工作区`。
+3. 选择要纳入工作区的图片。
+4. 系统会自动生成一个新的空白工作区。
+5. 在图片上双击空白区域新增 label。
+6. 在右侧填写翻译内容。
+7. 编辑结果会保存在浏览器本地存储。
 
-### 2. Review The Image List
+### Web：打开已有 LabelPlus 文本
 
-- Use the left panel to switch between files
-- The active file is kept in sync with keyboard navigation
-- Thumbnails help verify image matching
+1. 点击 `导入工作区`。
+2. 选择已有的 LabelPlus `txt` 文件。
+3. 如果需要，使用 `关联本地图片` 补充对应图片。
+4. 继续编辑 label、分组和翻译文本。
 
-### 3. Add Labels
+### Tauri：新建桌面项目
 
-- Double click a blank spot on the image to create a label
-- Use the current selected group for the new label
-- Drag labels to refine their positions
+1. 启动桌面端应用。
+2. 点击 `新建工作区`。
+3. 选择包含源图片的项目文件夹。
+4. LabelPlusX 会自动扫描图片并生成新的工作文件。
+5. 新工作区会立即载入。
+6. 编辑完成后可直接保存回原始 `txt` 文件。
 
-### 4. Fill Translation Text
+### Tauri：打开已有本地项目
 
-- Select a label from the preview or the right-side list
-- Type in the current label editor
-- Use QuickText for repeated short phrases
-- Press `Cmd/Ctrl + Enter` to move to the next label while staying in text flow
+1. 点击 `导入工作区`。
+2. 选择已有的 LabelPlus `txt` 工作文件。
+3. LabelPlusX 会自动从同目录读取对应本地图片。
+4. 编辑后可直接保存回源文件。
 
-### 5. Use Groups
+## 典型工作流
 
-- Switch the active group from the left-side group chips
-- Rename groups when needed
-- Only empty groups can be removed
+### 1. 创建或打开工作区
 
-### 6. Review In Check Mode
+- Web：从图片新建，或导入已有 `txt`
+- Tauri：从项目文件夹新建，或导入已有 `txt`
 
-- Toggle check mode from the preview toolbar
-- Switch between horizontal and vertical reading layouts
-- Adjust check-mode font size from settings
+### 2. 浏览图片列表
 
-### 7. Save
+- 左侧用于切换工作区文件
+- 键盘切图时，列表会自动跟随到当前项
+- 缩略图可用于确认图片匹配是否正常
 
-- Web: edits are stored in browser local storage
-- Tauri: save writes back to the original workspace file
-- Use `Cmd/Ctrl + S` for manual save
+### 3. 添加 label
 
-## Current Status
+- 双击图片空白区域新增 label
+- 新增时自动使用当前选中的分组
+- 拖动 label 调整位置
 
-LabelPlusX already covers the main day-to-day workflow:
+### 4. 填写翻译文本
 
-- create or import workspace
-- initialize images
-- edit labels and translations
-- use QuickText
-- run check mode
-- save and export legacy text
+- 从预览区或右侧列表选择 label
+- 在当前标签编辑框中输入文本
+- 使用 QuickText 快速录入重复短语
+- 按 `Cmd/Ctrl + Enter` 连续跳到下一条继续翻译
 
-There are still possible future improvements, but the core workflow is already usable.
+### 5. 使用分组
+
+- 左侧分组 chip 可切换当前分组
+- 可直接修改分组名称
+- 只有空分组才允许删除
+
+### 6. 检查模式复核
+
+- 从预览工具栏切换检查模式
+- 在横排 / 竖排之间切换
+- 在设置中调整检查模式字体大小
+
+### 7. 保存
+
+- Web：保存到浏览器本地存储
+- Tauri：保存回原始工作区文件
+- 可使用 `Cmd/Ctrl + S` 手动保存
+
+## 当前状态
+
+LabelPlusX 目前已经覆盖主要日常工作流：
+
+- 新建或导入工作区
+- 初始化图片
+- 编辑 label 与翻译文本
+- 使用 QuickText
+- 进入检查模式
+- 保存或导出旧版文本
+
+后续仍然可以继续扩展，但核心链路已经可用于正式工作。
 
 ## License
 
-See `LICENSE`.
+详见 `LICENSE`。
