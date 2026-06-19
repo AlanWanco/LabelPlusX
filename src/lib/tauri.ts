@@ -83,6 +83,10 @@ export async function createDesktopWorkspace(path: string): Promise<WorkspaceDat
   }
 }
 
+export async function loadDesktopImageSrc(path: string) {
+  return invoke<string>('load_image_data_url', { path })
+}
+
 export async function saveDesktopWorkspace(path: string, content: string) {
   await invoke('save_workspace', { path, content })
 }

@@ -44,6 +44,10 @@
     linear-gradient(180deg, #020617 0%, #0f172a 100%);
 }
 
+:root[data-platform='windows-tauri'] {
+  font-size: 17px;
+}
+
 * {
   box-sizing: border-box;
 }

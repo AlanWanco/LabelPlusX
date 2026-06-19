@@ -7,6 +7,7 @@ import {
   createDesktopWorkspace,
   isTauriRuntime,
   loadDesktopWorkspace,
+  loadDesktopImageSrc,
   openDesktopProjectDirectory,
   openDesktopWorkspace,
   saveDesktopWorkspace,
@@ -137,6 +138,7 @@ function getInitialSettings() {
 function App() {
   const isDesktop = isTauriRuntime()
   const isMacPlatform = typeof navigator !== 'undefined' && /mac/i.test(navigator.platform)
+  const isWindowsPlatform = typeof navigator !== 'undefined' && /win/i.test(navigator.userAgent)
   const [theme, setTheme] = useState<ThemeMode>(getInitialTheme)
   const [settings, setSettings] = useState<AppSettings>(getInitialSettings)
   const [workspace, setWorkspace] = useState<WorkspaceData | null>(null)
@@ -161,6 +163,7 @@ function App() {
   const [isQuickTextSettingsOpen, setIsQuickTextSettingsOpen] = useState(false)
   const [isShortcutListOpen, setIsShortcutListOpen] = useState(false)
   const [previewQuickTextAnchor, setPreviewQuickTextAnchor] = useState<{ x: number; y: number; xPercent: number; yPercent: number } | null>(null)
+  const [desktopImageSrcMap, setDesktopImageSrcMap] = useState<Record<string, string>>({})
   const objectUrlsRef = useRef<string[]>([])
   const importDroppedFilesRef = useRef<(fileList: FileList | File[]) => Promise<void>>(async () => {})
   const importDesktopDroppedPathsRef = useRef<(paths: string[]) => Promise<void>>(async () => {})
@@ -174,6 +177,9 @@ function App() {
   const labelEditorRef = useRef<HTMLTextAreaElement | null>(null)
   const quickTextPanelRef = useRef<HTMLDivElement | null>(null)
   const labelPanelResizeStateRef = useRef<{ startX: number; startWidth: number } | null>(null)
+  const labelTextUndoCapturedRef = useRef(false)
+  const commentUndoCapturedRef = useRef(false)
+  const groupUndoCapturedRef = useRef<number | null>(null)
   const previewPointerRef = useRef<{ xPercent: number; yPercent: number; clientX: number; clientY: number; inside: boolean }>({
     xPercent: 0.5,
     yPercent: 0.5,
@@ -200,6 +206,7 @@ function App() {
     | null
   >(null)
   const activeFile = workspace?.files.find((file) => file.name === activeFileName) ?? null
+  const activeFileImageSrc = activeFile ? activeFile.imageSrc ?? desktopImageSrcMap[activeFile.name] : undefined
   const activeLabel = activeFile?.labels.find((label) => label.id === activeLabelId) ?? null
   const activeLabelIndex = activeFile?.labels.findIndex((label) => label.id === activeLabelId) ?? -1
   const untranslatedLabels = activeFile?.labels.filter((label) => label.text.trim().length === 0) ?? []
@@ -209,6 +216,15 @@ function App() {
     document.documentElement.dataset.theme = theme
     window.localStorage.setItem(themeStorageKey, theme)
   }, [theme])
+
+  useEffect(() => {
+    if (isDesktop && isWindowsPlatform) {
+      document.documentElement.dataset.platform = 'windows-tauri'
+      return
+    }
+
+    delete document.documentElement.dataset.platform
+  }, [isDesktop, isWindowsPlatform])
 
   useEffect(() => {
     window.localStorage.setItem(settingsStorageKey, JSON.stringify(settings))
@@ -260,6 +276,7 @@ function App() {
   function applyWorkspace(nextWorkspace: WorkspaceData) {
     const hydratedWorkspace = hydrateWorkspaceWithStoredTexts(nextWorkspace)
     setWorkspace(hydratedWorkspace)
+    setDesktopImageSrcMap({})
     setActiveFileName(hydratedWorkspace.files[0]?.name ?? '')
     setActiveLabelId(hydratedWorkspace.files[0]?.labels[0]?.id ?? null)
     setSelectedCategory(1)
@@ -618,6 +635,10 @@ function App() {
     return `${getResolvedGroupName(index)}(${index})`
   }
 
+  function getFileImageSrc(file: { name: string; imageSrc?: string }) {
+    return file.imageSrc ?? desktopImageSrcMap[file.name]
+  }
+
   function selectLabel(label: LabelEntry, shouldCenter = false) {
     setActiveLabelId(label.id)
     if (shouldCenter) {
@@ -691,7 +712,7 @@ function App() {
     const start = textarea.selectionStart ?? activeLabel.text.length
     const end = textarea.selectionEnd ?? activeLabel.text.length
     const nextText = `${activeLabel.text.slice(0, start)}${insertedText}${activeLabel.text.slice(end)}`
-    updateActiveLabelText(nextText)
+    updateActiveLabelText(nextText, { captureHistory: false })
     closeQuickText()
 
     requestAnimationFrame(() => {
@@ -701,12 +722,14 @@ function App() {
     })
   }
 
-  function updateActiveLabelText(nextText: string) {
+  function updateActiveLabelText(nextText: string, options?: { captureHistory?: boolean }) {
     if (!workspace || !activeFileName || activeLabelId === null) {
       return
     }
 
-    pushUndoSnapshot()
+    if (options?.captureHistory !== false) {
+      pushUndoSnapshot()
+    }
 
     const nextWorkspace: WorkspaceData = {
       ...workspace,
@@ -759,12 +782,14 @@ function App() {
     setStatus(text.status.labelCategoryChanged(normalizedCategory))
   }
 
-  function updateComment(comment: string) {
+  function updateComment(comment: string, options?: { captureHistory?: boolean }) {
     if (!workspace) {
       return
     }
 
-    pushUndoSnapshot()
+    if (options?.captureHistory !== false) {
+      pushUndoSnapshot()
+    }
 
     setWorkspace({
       ...workspace,
@@ -774,12 +799,14 @@ function App() {
     setStatus(text.status.commentSaved)
   }
 
-  function updateGroupName(index: number, name: string) {
+  function updateGroupName(index: number, name: string, options?: { captureHistory?: boolean }) {
     if (!workspace) {
       return
     }
 
-    pushUndoSnapshot()
+    if (options?.captureHistory !== false) {
+      pushUndoSnapshot()
+    }
 
     const nextGroups = [...getVisibleGroupNames()]
     nextGroups[index] = name
@@ -1163,7 +1190,7 @@ function App() {
 
   useEffect(() => {
     const frame = imageFrameRef.current
-    if (!frame || imageNaturalSize.width <= 0 || imageNaturalSize.height <= 0 || !activeFile?.imageSrc) {
+    if (!frame || imageNaturalSize.width <= 0 || imageNaturalSize.height <= 0 || !activeFileImageSrc) {
       return
     }
 
@@ -1186,7 +1213,7 @@ function App() {
 
     observer.observe(frame)
     return () => observer.disconnect()
-  }, [activeFile?.imageSrc, imageNaturalSize.height, imageNaturalSize.width])
+  }, [activeFileImageSrc, imageNaturalSize.height, imageNaturalSize.width])
 
   useEffect(() => {
     importDroppedFilesRef.current = importDroppedFiles
@@ -1374,7 +1401,7 @@ function App() {
         return
       }
 
-      if (event.altKey && key === 'a' && activeFile?.imageSrc && previewPointerRef.current.inside) {
+      if (event.altKey && key === 'a' && activeFileImageSrc && previewPointerRef.current.inside) {
         event.preventDefault()
         setQuickTextMode('preview')
         setPreviewQuickTextAnchor({
@@ -1494,6 +1521,45 @@ function App() {
     const activeItem = fileListRef.current.querySelector<HTMLElement>(`[data-file-name="${CSS.escape(activeFileName)}"]`)
     activeItem?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }, [activeFileName])
+
+  useEffect(() => {
+    if (!workspace || workspace.source !== 'desktop') {
+      return
+    }
+
+    let cancelled = false
+    const pendingFiles = workspace.files.filter((file) => file.imagePath && !desktopImageSrcMap[file.name])
+
+    if (pendingFiles.length === 0) {
+      return
+    }
+
+    void Promise.all(
+      pendingFiles.map(async (file) => ({
+        name: file.name,
+        imageSrc: await loadDesktopImageSrc(file.imagePath!),
+      })),
+    )
+      .then((entries) => {
+        if (cancelled) {
+          return
+        }
+
+        setDesktopImageSrcMap((current) => ({
+          ...current,
+          ...Object.fromEntries(entries.map((entry) => [entry.name, entry.imageSrc])),
+        }))
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setStatus(error instanceof Error ? error.message : text.status.imageLoadFailed(activeFileName || 'image'))
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [desktopImageSrcMap, workspace, activeFileName])
 
   useEffect(() => {
     function handlePointerMove(event: PointerEvent) {
@@ -1847,8 +1913,8 @@ function App() {
                       <small>{text.workspace.labelCount(file.labels.length)}</small>
                     </div>
                     <div className="file-item-thumb">
-                      {file.imageSrc ? (
-                        <img src={file.imageSrc} alt={file.name} className="file-item-thumb-image" />
+                       {getFileImageSrc(file) ? (
+                         <img src={getFileImageSrc(file)} alt={file.name} className="file-item-thumb-image" />
                       ) : (
                         <span className="file-item-thumb-empty">{text.workspace.noImage}</span>
                       )}
@@ -1891,7 +1957,21 @@ function App() {
                 {getVisibleGroupNames().map((group, index) => (
                   <label key={`group-edit-${index}`} className="group-edit-row">
                     <span>{index + 1}</span>
-                    <input value={group} onChange={(event) => updateGroupName(index, event.target.value)} />
+                    <input
+                      value={group}
+                      onFocus={() => {
+                        if (groupUndoCapturedRef.current !== index) {
+                          pushUndoSnapshot()
+                          groupUndoCapturedRef.current = index
+                        }
+                      }}
+                      onBlur={() => {
+                        if (groupUndoCapturedRef.current === index) {
+                          groupUndoCapturedRef.current = null
+                        }
+                      }}
+                      onChange={(event) => updateGroupName(index, event.target.value, { captureHistory: false })}
+                    />
                     <button
                       type="button"
                       className="group-delete-button"
@@ -1911,7 +1991,16 @@ function App() {
             <textarea
               className="comment-box comment-editor"
               value={workspace?.comment ?? ''}
-              onChange={(event) => updateComment(event.target.value)}
+              onFocus={() => {
+                if (!commentUndoCapturedRef.current) {
+                  pushUndoSnapshot()
+                  commentUndoCapturedRef.current = true
+                }
+              }}
+              onBlur={() => {
+                commentUndoCapturedRef.current = false
+              }}
+              onChange={(event) => updateComment(event.target.value, { captureHistory: false })}
               placeholder={text.workspace.commentPlaceholder}
             />
           </div>
@@ -1921,7 +2010,7 @@ function App() {
           <div className="panel-header">
             <div>
               <h3>{text.preview.title}</h3>
-              <p>{activeFile?.imageSrc ? text.preview.imageMatched : status}</p>
+               <p>{activeFileImageSrc ? text.preview.imageMatched : status}</p>
             </div>
             <div className="preview-toolbar">
               <div className="preview-help-wrap">
@@ -1968,7 +2057,7 @@ function App() {
 
           {activeFile ? (
             <div className="image-stage">
-              {activeFile.imageSrc ? (
+              {activeFileImageSrc ? (
                 <div
                   ref={imageFrameRef}
                   className="image-frame"
@@ -1987,7 +2076,7 @@ function App() {
                     <div className="preview-scale-layer" style={{ transform: `scale(${previewZoom})` }}>
                     <img
                       ref={previewImageRef}
-                      src={activeFile.imageSrc}
+                       src={activeFileImageSrc}
                       alt={activeFile.name}
                       className="preview-image"
                       onLoad={handlePreviewImageLoad}
@@ -2148,7 +2237,16 @@ function App() {
                       <textarea
                         ref={labelEditorRef}
                         value={activeLabel.text}
-                        onChange={(event) => updateActiveLabelText(event.target.value)}
+                        onFocus={() => {
+                          if (!labelTextUndoCapturedRef.current) {
+                            pushUndoSnapshot()
+                            labelTextUndoCapturedRef.current = true
+                          }
+                        }}
+                        onBlur={() => {
+                          labelTextUndoCapturedRef.current = false
+                        }}
+                        onChange={(event) => updateActiveLabelText(event.target.value, { captureHistory: false })}
                         placeholder={text.labels.textPlaceholder}
                       />
                       {isQuickTextOpen && quickTextMode === 'editor' ? (

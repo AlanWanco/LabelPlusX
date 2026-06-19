@@ -52,7 +52,6 @@ fn load_workspace(path: String) -> Result<WorkspaceData, String> {
         let image_path = parent_dir.join(&file.name);
         if image_path.is_file() {
             file.image_path = Some(image_path.to_string_lossy().into_owned());
-            file.image_src = build_image_data_url(&image_path).ok();
         }
     }
 
@@ -62,6 +61,11 @@ fn load_workspace(path: String) -> Result<WorkspaceData, String> {
         comment: start_blocks.comment,
         files,
     })
+}
+
+#[tauri::command]
+fn load_image_data_url(path: String) -> Result<String, String> {
+    build_image_data_url(Path::new(&path))
 }
 
 #[tauri::command]
@@ -320,7 +324,12 @@ fn parse_start_blocks(content: &str) -> StartBlocks {
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![load_workspace, save_workspace, create_workspace])
+        .invoke_handler(tauri::generate_handler![
+            load_workspace,
+            save_workspace,
+            create_workspace,
+            load_image_data_url
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
