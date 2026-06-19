@@ -681,7 +681,7 @@ function App() {
       return
     }
 
-    selectLabel(activeFile.labels[nextIndex])
+    selectLabel(activeFile.labels[nextIndex], shouldFocusEditor)
     if (shouldFocusEditor) {
       focusActiveLabelEditor()
     }
