@@ -39,8 +39,37 @@ export async function openDesktopWorkspace() {
   return typeof result === 'string' ? result : null
 }
 
+export async function openDesktopProjectDirectory() {
+  if (!isTauriRuntime()) {
+    throw new Error(text.status.notTauriRuntime)
+  }
+
+  const { open } = await import('@tauri-apps/plugin-dialog')
+  const result = await open({
+    directory: true,
+    multiple: false,
+  })
+
+  return typeof result === 'string' ? result : null
+}
+
 export async function loadDesktopWorkspace(path: string): Promise<WorkspaceData> {
   const payload = await invoke<DesktopWorkspacePayload>('load_workspace', { path })
+
+  return {
+    source: 'desktop',
+    labelPath: payload.labelPath,
+    groups: payload.groups,
+    comment: payload.comment,
+    files: payload.files.map((file) => ({
+      ...file,
+      imageSrc: file.imageSrc,
+    })),
+  }
+}
+
+export async function createDesktopWorkspace(path: string): Promise<WorkspaceData> {
+  const payload = await invoke<DesktopWorkspacePayload>('create_workspace', { path })
 
   return {
     source: 'desktop',

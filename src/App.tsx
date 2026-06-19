@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ChangeEvent, CSSProperties } from 'react'
-import { ChevronDown, Moon, Settings, SunMedium } from 'lucide-react'
+import { ChevronDown, CircleHelp, Minus, Moon, Plus, Settings, SunMedium } from 'lucide-react'
 import './App.css'
+import packageJson from '../package.json'
 import {
+  createDesktopWorkspace,
   isTauriRuntime,
   loadDesktopWorkspace,
+  openDesktopProjectDirectory,
   openDesktopWorkspace,
   saveDesktopWorkspace,
 } from './lib/tauri'
@@ -27,8 +30,42 @@ const exportFileName = 'labelplus-export.txt'
 const minPreviewZoom = 0.1
 const maxPreviewZoom = 8
 const categoryColors = ['#ef4444', '#3b82f6', '#22c55e', '#f59e0b', '#a855f7', '#06b6d4', '#ec4899', '#f97316', '#64748b']
-const appVersion = '0.1.0'
+const appVersion = packageJson.version
 const projectHomepage = 'https://github.com/AlanWanco/LabelPlusX'
+const editableSelector = 'input, textarea, select, [contenteditable="true"]'
+const defaultGroupNames = ['框内', '框外']
+const defaultQuickTexts = [
+  { text: '啊', key: 'A' },
+  { text: '嗯', key: 'E' },
+  { text: '呜', key: 'W' },
+  { text: '唔', key: 'W' },
+  { text: '咕', key: 'G' },
+  { text: '咿', key: 'Y' },
+  { text: '呀', key: 'Y' },
+  { text: '啾', key: 'J' },
+  { text: '噗', key: 'P' },
+  { text: '♥', key: '1' },
+  { text: '♡', key: '2' },
+  { text: '♪', key: '3' },
+]
+
+interface QuickTextItem {
+  text: string
+  key: string
+}
+
+interface AppSettings {
+  autoSave: boolean
+  checkFontSize: number
+  quickTexts: QuickTextItem[]
+}
+
+interface EditorSnapshot {
+  workspace: WorkspaceData
+  activeFileName: string
+  activeLabelId: number | null
+  selectedCategory: number
+}
 
 function getWorkspaceMetaStorageKey(workspace: WorkspaceData) {
   return `${getWorkspaceStorageKey(workspace)}:meta`
@@ -61,6 +98,7 @@ function getInitialSettings() {
     return {
       autoSave: true,
       checkFontSize: 16,
+      quickTexts: defaultQuickTexts,
     }
   }
 
@@ -70,26 +108,37 @@ function getInitialSettings() {
       return {
         autoSave: true,
         checkFontSize: 16,
+        quickTexts: defaultQuickTexts,
       }
     }
 
-    const parsed = JSON.parse(raw) as { autoSave?: boolean; checkFontSize?: number }
+    const parsed = JSON.parse(raw) as { autoSave?: boolean; checkFontSize?: number; quickTexts?: QuickTextItem[] }
     return {
       autoSave: parsed.autoSave ?? true,
       checkFontSize: Math.min(24, Math.max(12, parsed.checkFontSize ?? 16)),
+      quickTexts: Array.isArray(parsed.quickTexts) && parsed.quickTexts.length > 0
+        ? parsed.quickTexts
+          .map((item) => ({
+            text: String(item.text ?? '').slice(0, 32),
+            key: String(item.key ?? '').slice(0, 1).toUpperCase(),
+          }))
+          .filter((item) => item.text)
+        : defaultQuickTexts,
     }
   } catch {
     return {
       autoSave: true,
       checkFontSize: 16,
+      quickTexts: defaultQuickTexts,
     }
   }
 }
 
 function App() {
   const isDesktop = isTauriRuntime()
+  const isMacPlatform = typeof navigator !== 'undefined' && /mac/i.test(navigator.platform)
   const [theme, setTheme] = useState<ThemeMode>(getInitialTheme)
-  const [settings, setSettings] = useState(getInitialSettings)
+  const [settings, setSettings] = useState<AppSettings>(getInitialSettings)
   const [workspace, setWorkspace] = useState<WorkspaceData | null>(null)
   const [activeFileName, setActiveFileName] = useState<string>('')
   const [activeLabelId, setActiveLabelId] = useState<number | null>(null)
@@ -105,10 +154,33 @@ function App() {
   const [readingMode, setReadingMode] = useState<ReadingMode>(getInitialReadingMode)
   const [imageNaturalSize, setImageNaturalSize] = useState({ width: 0, height: 0 })
   const [selectedCategory, setSelectedCategory] = useState(1)
+  const [labelPanelWidth, setLabelPanelWidth] = useState(360)
+  const [arePreviewLabelsHidden, setArePreviewLabelsHidden] = useState(false)
+  const [isQuickTextOpen, setIsQuickTextOpen] = useState(false)
+  const [quickTextMode, setQuickTextMode] = useState<'editor' | 'preview' | null>(null)
+  const [isQuickTextSettingsOpen, setIsQuickTextSettingsOpen] = useState(false)
+  const [isShortcutListOpen, setIsShortcutListOpen] = useState(false)
+  const [previewQuickTextAnchor, setPreviewQuickTextAnchor] = useState<{ x: number; y: number; xPercent: number; yPercent: number } | null>(null)
   const objectUrlsRef = useRef<string[]>([])
   const importDroppedFilesRef = useRef<(fileList: FileList | File[]) => Promise<void>>(async () => {})
   const importDesktopDroppedPathsRef = useRef<(paths: string[]) => Promise<void>>(async () => {})
+  const undoHistoryRef = useRef<EditorSnapshot[]>([])
+  const redoHistoryRef = useRef<EditorSnapshot[]>([])
+  const pendingDragHistoryPointerIdRef = useRef<number | null>(null)
+  const hasManualPreviewTransformRef = useRef(false)
+  const fileListRef = useRef<HTMLDivElement | null>(null)
+  const newWorkspaceImageInputRef = useRef<HTMLInputElement | null>(null)
   const labelFileInputRef = useRef<HTMLInputElement | null>(null)
+  const labelEditorRef = useRef<HTMLTextAreaElement | null>(null)
+  const quickTextPanelRef = useRef<HTMLDivElement | null>(null)
+  const labelPanelResizeStateRef = useRef<{ startX: number; startWidth: number } | null>(null)
+  const previewPointerRef = useRef<{ xPercent: number; yPercent: number; clientX: number; clientY: number; inside: boolean }>({
+    xPercent: 0.5,
+    yPercent: 0.5,
+    clientX: 0,
+    clientY: 0,
+    inside: false,
+  })
   const imageFrameRef = useRef<HTMLDivElement | null>(null)
   const previewImageRef = useRef<HTMLImageElement | null>(null)
   const interactionRef = useRef<
@@ -129,6 +201,7 @@ function App() {
   >(null)
   const activeFile = workspace?.files.find((file) => file.name === activeFileName) ?? null
   const activeLabel = activeFile?.labels.find((label) => label.id === activeLabelId) ?? null
+  const activeLabelIndex = activeFile?.labels.findIndex((label) => label.id === activeLabelId) ?? -1
   const untranslatedLabels = activeFile?.labels.filter((label) => label.text.trim().length === 0) ?? []
   const firstUntranslatedLabel = untranslatedLabels[0] ?? null
 
@@ -190,9 +263,71 @@ function App() {
     setActiveFileName(hydratedWorkspace.files[0]?.name ?? '')
     setActiveLabelId(hydratedWorkspace.files[0]?.labels[0]?.id ?? null)
     setSelectedCategory(1)
+    undoHistoryRef.current = []
+    redoHistoryRef.current = []
     setPreviewZoom(1)
     setPreviewPan({ x: 0, y: 0 })
     setImageNaturalSize({ width: 0, height: 0 })
+  }
+
+  function cloneWorkspaceSnapshot(source: WorkspaceData) {
+    return structuredClone(source)
+  }
+
+  function captureEditorSnapshot(): EditorSnapshot | null {
+    if (!workspace) {
+      return null
+    }
+
+    return {
+      workspace: cloneWorkspaceSnapshot(workspace),
+      activeFileName,
+      activeLabelId,
+      selectedCategory,
+    }
+  }
+
+  function applyEditorSnapshot(snapshot: EditorSnapshot) {
+    setWorkspace(cloneWorkspaceSnapshot(snapshot.workspace))
+    setActiveFileName(snapshot.activeFileName)
+    setActiveLabelId(snapshot.activeLabelId)
+    setSelectedCategory(snapshot.selectedCategory)
+    setHasUnsavedLocalEdits(true)
+  }
+
+  function pushUndoSnapshot() {
+    const snapshot = captureEditorSnapshot()
+    if (!snapshot) {
+      return
+    }
+
+    undoHistoryRef.current.push(snapshot)
+    if (undoHistoryRef.current.length > 120) {
+      undoHistoryRef.current.shift()
+    }
+    redoHistoryRef.current = []
+  }
+
+  function undoLastChange() {
+    const snapshot = undoHistoryRef.current.pop()
+    const current = captureEditorSnapshot()
+    if (!snapshot || !current) {
+      return
+    }
+
+    redoHistoryRef.current.push(current)
+    applyEditorSnapshot(snapshot)
+  }
+
+  function redoLastChange() {
+    const snapshot = redoHistoryRef.current.pop()
+    const current = captureEditorSnapshot()
+    if (!snapshot || !current) {
+      return
+    }
+
+    undoHistoryRef.current.push(current)
+    applyEditorSnapshot(snapshot)
   }
 
   function replaceObjectUrls(urls: string[]) {
@@ -219,6 +354,36 @@ function App() {
     replaceObjectUrls(urls)
     applyWorkspace(nextWorkspace)
     setStatus(text.status.localImagesLinked(imageFiles.length))
+  }
+
+  function createWebWorkspaceFromImages(imageFiles: File[]) {
+    if (imageFiles.length === 0) {
+      setStatus(text.status.imageFilesRequired)
+      return
+    }
+
+    const nextWorkspace: WorkspaceData = {
+      source: 'web',
+      groups: [...defaultGroupNames],
+      comment: '',
+      files: imageFiles
+        .filter((file) => file.type.startsWith('image/'))
+        .sort((left, right) => left.name.localeCompare(right.name, 'zh-CN'))
+        .map((file) => ({
+          name: file.name,
+          labels: [],
+          imageSrc: URL.createObjectURL(file),
+        })),
+    }
+
+    if (nextWorkspace.files.length === 0) {
+      setStatus(text.status.imageFilesRequired)
+      return
+    }
+
+    replaceObjectUrls(nextWorkspace.files.map((file) => file.imageSrc!).filter(Boolean))
+    applyWorkspace(nextWorkspace)
+    setStatus(text.status.webWorkspaceCreated(nextWorkspace.files.length))
   }
 
   async function importDroppedFiles(fileList: FileList | File[]) {
@@ -280,6 +445,26 @@ function App() {
     }
   }
 
+  async function handleDesktopCreateWorkspace() {
+    setIsBusy(true)
+
+    try {
+      const selectedPath = await openDesktopProjectDirectory()
+      if (!selectedPath) {
+        setStatus(text.status.fileSelectionCancelled)
+        return
+      }
+
+      const nextWorkspace = await createDesktopWorkspace(selectedPath)
+      applyWorkspace(nextWorkspace)
+      setStatus(text.status.desktopWorkspaceCreated(nextWorkspace.labelPath ?? selectedPath))
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : text.status.desktopWorkspaceCreateFailed)
+    } finally {
+      setIsBusy(false)
+    }
+  }
+
   async function importDesktopDroppedPaths(paths: string[]) {
     const labelPath = paths.find((path) => /\.txt$/i.test(path))
     if (!labelPath) {
@@ -310,6 +495,15 @@ function App() {
     labelFileInputRef.current?.click()
   }
 
+  async function handleCreateWorkspace() {
+    if (isDesktop) {
+      await handleDesktopCreateWorkspace()
+      return
+    }
+
+    newWorkspaceImageInputRef.current?.click()
+  }
+
   async function handleLabelFileChange(event: ChangeEvent<HTMLInputElement>) {
     const selectedFile = event.target.files?.[0]
     if (!selectedFile) {
@@ -335,6 +529,12 @@ function App() {
     }
 
     attachImagesToWorkspace(workspace, files)
+    event.target.value = ''
+  }
+
+  function handleNewWorkspaceImageFilesChange(event: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files ?? [])
+    createWebWorkspaceFromImages(files)
     event.target.value = ''
   }
 
@@ -386,6 +586,7 @@ function App() {
       x: targetX - baseX - label.xPercent * scaledWidth,
       y: targetY - label.yPercent * scaledHeight,
     })
+    hasManualPreviewTransformRef.current = true
   }
 
   function getCategoryChipStyle(category: number): CSSProperties {
@@ -400,15 +601,112 @@ function App() {
     } as CSSProperties
   }
 
-  function selectLabel(label: LabelEntry) {
+  function getResolvedGroupName(index: number) {
+    const name = workspace?.groups[index - 1]?.trim()
+    return name || defaultGroupNames[index - 1] || `G${index}`
+  }
+
+  function getVisibleGroupNames() {
+    if (!workspace) {
+      return defaultGroupNames
+    }
+
+    return workspace.groups.length > 0 ? workspace.groups : defaultGroupNames
+  }
+
+  function getGroupDisplayName(index: number) {
+    return `${getResolvedGroupName(index)}(${index})`
+  }
+
+  function selectLabel(label: LabelEntry, shouldCenter = false) {
     setActiveLabelId(label.id)
-    focusLabelInPreview(label)
+    if (shouldCenter) {
+      focusLabelInPreview(label)
+    }
+  }
+
+  function focusActiveLabelEditor() {
+    requestAnimationFrame(() => {
+      labelEditorRef.current?.focus()
+    })
+  }
+
+  function selectRelativeFile(offset: number) {
+    if (!workspace?.files.length || !activeFileName) {
+      return
+    }
+
+    const currentIndex = workspace.files.findIndex((file) => file.name === activeFileName)
+    if (currentIndex < 0) {
+      return
+    }
+
+    const nextIndex = currentIndex + offset
+    if (nextIndex < 0 || nextIndex >= workspace.files.length) {
+      return
+    }
+
+    selectFile(workspace.files[nextIndex].name)
+  }
+
+  function selectRelativeLabel(offset: number, shouldFocusEditor = false) {
+    if (!activeFile?.labels.length) {
+      return
+    }
+
+    const currentIndex = activeLabelIndex >= 0 ? activeLabelIndex : 0
+    const nextIndex = currentIndex + offset
+    if (nextIndex < 0 || nextIndex >= activeFile.labels.length) {
+      return
+    }
+
+    selectLabel(activeFile.labels[nextIndex])
+    if (shouldFocusEditor) {
+      focusActiveLabelEditor()
+    }
+  }
+
+  function closeQuickText() {
+    setIsQuickTextOpen(false)
+    setQuickTextMode(null)
+    setPreviewQuickTextAnchor(null)
+  }
+
+  function insertQuickText(insertedText: string) {
+    if (quickTextMode === 'preview') {
+      if (!previewQuickTextAnchor) {
+        return
+      }
+
+      addLabelAtPosition(previewQuickTextAnchor.xPercent, previewQuickTextAnchor.yPercent, insertedText)
+      closeQuickText()
+      return
+    }
+
+    if (!activeLabel || !labelEditorRef.current) {
+      return
+    }
+
+    const textarea = labelEditorRef.current
+    const start = textarea.selectionStart ?? activeLabel.text.length
+    const end = textarea.selectionEnd ?? activeLabel.text.length
+    const nextText = `${activeLabel.text.slice(0, start)}${insertedText}${activeLabel.text.slice(end)}`
+    updateActiveLabelText(nextText)
+    closeQuickText()
+
+    requestAnimationFrame(() => {
+      textarea.focus()
+      const nextCaret = start + insertedText.length
+      textarea.setSelectionRange(nextCaret, nextCaret)
+    })
   }
 
   function updateActiveLabelText(nextText: string) {
     if (!workspace || !activeFileName || activeLabelId === null) {
       return
     }
+
+    pushUndoSnapshot()
 
     const nextWorkspace: WorkspaceData = {
       ...workspace,
@@ -435,6 +733,8 @@ function App() {
     if (!workspace || !activeFileName || activeLabelId === null) {
       return
     }
+
+    pushUndoSnapshot()
 
     const normalizedCategory = Math.max(1, Math.min(9, category))
     const nextWorkspace: WorkspaceData = {
@@ -464,6 +764,8 @@ function App() {
       return
     }
 
+    pushUndoSnapshot()
+
     setWorkspace({
       ...workspace,
       comment,
@@ -472,10 +774,75 @@ function App() {
     setStatus(text.status.commentSaved)
   }
 
-  function addLabelAtPosition(xPercent: number, yPercent: number) {
+  function updateGroupName(index: number, name: string) {
+    if (!workspace) {
+      return
+    }
+
+    pushUndoSnapshot()
+
+    const nextGroups = [...getVisibleGroupNames()]
+    nextGroups[index] = name
+    setWorkspace({
+      ...workspace,
+      groups: nextGroups.slice(0, 9),
+    })
+    setHasUnsavedLocalEdits(true)
+  }
+
+  function addGroup() {
+    if (!workspace || getVisibleGroupNames().length >= 9) {
+      return
+    }
+
+    pushUndoSnapshot()
+
+    const nextGroups = [...getVisibleGroupNames(), defaultGroupNames[getVisibleGroupNames().length] ?? '']
+    setWorkspace({
+      ...workspace,
+      groups: nextGroups.slice(0, 9),
+    })
+    setHasUnsavedLocalEdits(true)
+  }
+
+  function canDeleteGroup(index: number) {
+    const groupCount = getVisibleGroupNames().length
+    if (!workspace || groupCount <= 1) {
+      return false
+    }
+
+    return !workspace.files.some((file) => file.labels.some((label) => label.category === index + 1))
+  }
+
+  function deleteGroup(index: number) {
+    if (!workspace || !canDeleteGroup(index)) {
+      return
+    }
+
+    pushUndoSnapshot()
+
+    const nextGroups = getVisibleGroupNames().filter((_, groupIndex) => groupIndex !== index)
+    setWorkspace({
+      ...workspace,
+      groups: nextGroups,
+      files: workspace.files.map((file) => ({
+        ...file,
+        labels: file.labels.map((label) => ({
+          ...label,
+          category: label.category > index + 1 ? label.category - 1 : label.category,
+        })),
+      })),
+    })
+    setSelectedCategory((current) => Math.min(current, nextGroups.length))
+    setHasUnsavedLocalEdits(true)
+  }
+
+  function addLabelAtPosition(xPercent: number, yPercent: number, textValue = '') {
     if (!workspace || !activeFileName) {
       return
     }
+
+    pushUndoSnapshot()
 
     const activeLabels = activeFile?.labels ?? []
     const nextId = activeLabels.reduce((maxId, label) => Math.max(maxId, label.id), 0) + 1
@@ -484,7 +851,7 @@ function App() {
       xPercent: Math.min(1, Math.max(0, xPercent)),
       yPercent: Math.min(1, Math.max(0, yPercent)),
       category: selectedCategory,
-      text: '',
+      text: textValue,
     }
 
     setWorkspace({
@@ -509,6 +876,8 @@ function App() {
     if (!workspace || !activeFileName || !activeFile) {
       return
     }
+
+    pushUndoSnapshot()
 
     const remainingLabels = activeFile.labels.filter((label) => label.id !== labelId)
     setWorkspace({
@@ -612,9 +981,11 @@ function App() {
 
     setPreviewZoom(clampZoom(nextZoom))
     setPreviewPan({ x: 0, y: 0 })
+    hasManualPreviewTransformRef.current = false
   }
 
   function zoomPreview(delta: number) {
+    hasManualPreviewTransformRef.current = true
     setPreviewZoom((current) => {
       return clampZoom(current + delta)
     })
@@ -672,6 +1043,7 @@ function App() {
     }
 
     setImageNaturalSize(nextSize)
+    hasManualPreviewTransformRef.current = false
 
     requestAnimationFrame(() => {
       fitPreviewToSize(nextSize.width, nextSize.height)
@@ -691,6 +1063,7 @@ function App() {
       basePanX: previewPan.x,
       basePanY: previewPan.y,
     }
+    hasManualPreviewTransformRef.current = true
     event.currentTarget.setPointerCapture(event.pointerId)
   }
 
@@ -718,6 +1091,7 @@ function App() {
     event.preventDefault()
     event.stopPropagation()
     setActiveLabelId(labelId)
+    pendingDragHistoryPointerIdRef.current = event.pointerId
     interactionRef.current = {
       type: 'label',
       pointerId: event.pointerId,
@@ -727,6 +1101,20 @@ function App() {
   }
 
   function handleFramePointerMove(event: React.PointerEvent<HTMLDivElement>) {
+    const previewImage = previewImageRef.current
+    if (previewImage) {
+      const rect = previewImage.getBoundingClientRect()
+      if (rect.width > 0 && rect.height > 0) {
+        previewPointerRef.current = {
+          xPercent: Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)),
+          yPercent: Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height)),
+          clientX: event.clientX,
+          clientY: event.clientY,
+          inside: event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom,
+        }
+      }
+    }
+
     const session = interactionRef.current
     if (!session || session.pointerId !== event.pointerId) {
       return
@@ -740,12 +1128,16 @@ function App() {
       return
     }
 
-    const image = previewImageRef.current
-    if (!image) {
+    if (pendingDragHistoryPointerIdRef.current === event.pointerId) {
+      pushUndoSnapshot()
+      pendingDragHistoryPointerIdRef.current = null
+    }
+
+    if (!previewImage) {
       return
     }
 
-    const rect = image.getBoundingClientRect()
+    const rect = previewImage.getBoundingClientRect()
     if (rect.width <= 0 || rect.height <= 0) {
       return
     }
@@ -762,6 +1154,7 @@ function App() {
     }
 
     interactionRef.current = null
+    pendingDragHistoryPointerIdRef.current = null
     if (session.type === 'label') {
       setStatus(text.status.labelMoved(session.labelId))
     }
@@ -775,6 +1168,10 @@ function App() {
     }
 
     const observer = new ResizeObserver(() => {
+      if (hasManualPreviewTransformRef.current) {
+        return
+      }
+
       requestAnimationFrame(() => {
         const rect = frame.getBoundingClientRect()
         const fitByHeight = rect.width >= rect.height
@@ -895,6 +1292,235 @@ function App() {
     return () => window.clearTimeout(timer)
   }, [hasUnsavedLocalEdits, persistWorkspace, settings.autoSave, workspace])
 
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    function isEditableTarget(target: EventTarget | null) {
+      return target instanceof HTMLElement && Boolean(target.closest(editableSelector))
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      const key = event.key.toLowerCase()
+      const isEditable = isEditableTarget(event.target)
+      const hasPrimaryModifier = isMacPlatform ? event.metaKey : event.ctrlKey
+
+      if (isSettingsOpen) {
+        return
+      }
+
+      if (isQuickTextOpen) {
+        const matchedQuickText = settings.quickTexts.find((item) => item.key.toLowerCase() === key)
+        if (matchedQuickText) {
+          event.preventDefault()
+          insertQuickText(matchedQuickText.text)
+          return
+        }
+
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          closeQuickText()
+          return
+        }
+      }
+
+      if (hasPrimaryModifier && !event.altKey) {
+        if (key === 's') {
+          event.preventDefault()
+          void handleSaveLocal()
+          return
+        }
+
+        if (key === 'z') {
+          event.preventDefault()
+          if (isMacPlatform && event.shiftKey) {
+            redoLastChange()
+          } else {
+            undoLastChange()
+          }
+          return
+        }
+
+        if (key === 'y') {
+          event.preventDefault()
+          redoLastChange()
+          return
+        }
+
+        if (key === 'enter' && isEditable) {
+          event.preventDefault()
+          selectRelativeLabel(1, true)
+          return
+        }
+
+        if (event.key === 'ArrowLeft' && isEditable) {
+          event.preventDefault()
+          selectRelativeFile(-1)
+          return
+        }
+
+        if (event.key === 'ArrowRight' && isEditable) {
+          event.preventDefault()
+          selectRelativeFile(1)
+          return
+        }
+      }
+
+      if (event.altKey && key === 'a' && isEditable) {
+        event.preventDefault()
+        setQuickTextMode('editor')
+        setIsQuickTextOpen(true)
+        return
+      }
+
+      if (event.altKey && key === 'a' && activeFile?.imageSrc && previewPointerRef.current.inside) {
+        event.preventDefault()
+        setQuickTextMode('preview')
+        setPreviewQuickTextAnchor({
+          x: previewPointerRef.current.clientX,
+          y: previewPointerRef.current.clientY,
+          xPercent: previewPointerRef.current.xPercent,
+          yPercent: previewPointerRef.current.yPercent,
+        })
+        setIsQuickTextOpen(true)
+        return
+      }
+
+      if (isEditable) {
+        return
+      }
+
+      if (/^[1-9]$/.test(key)) {
+        event.preventDefault()
+        setSelectedCategory(Number(key))
+        return
+      }
+
+      if ((event.key === 'Delete' || event.key === 'Backspace') && activeLabelId !== null) {
+        event.preventDefault()
+        deleteLabel(activeLabelId)
+        return
+      }
+
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault()
+        selectRelativeFile(-1)
+        return
+      }
+
+      if (event.key === 'ArrowRight') {
+        event.preventDefault()
+        selectRelativeFile(1)
+        return
+      }
+
+      if (key === 'r') {
+        event.preventDefault()
+        fitPreview()
+        return
+      }
+
+      if (key === 'c') {
+        event.preventDefault()
+        setIsCheckMode((current) => !current)
+        return
+      }
+
+      if (key === 'w') {
+        event.preventDefault()
+        toggleReadingMode()
+        return
+      }
+
+      if (event.key === 'Enter' && activeLabel) {
+        event.preventDefault()
+        focusActiveLabelEditor()
+        return
+      }
+
+      if (key === 'v' && !event.repeat) {
+        event.preventDefault()
+        setArePreviewLabelsHidden(true)
+      }
+    }
+
+    function handleKeyUp(event: KeyboardEvent) {
+      if (event.key.toLowerCase() === 'v') {
+        setArePreviewLabelsHidden(false)
+      }
+    }
+
+    function handleWindowBlur() {
+      setArePreviewLabelsHidden(false)
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    window.addEventListener('keyup', handleKeyUp)
+    window.addEventListener('blur', handleWindowBlur)
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('keyup', handleKeyUp)
+      window.removeEventListener('blur', handleWindowBlur)
+    }
+  })
+
+  useEffect(() => {
+    if (!isQuickTextOpen) {
+      return
+    }
+
+    function handlePointerDown(event: MouseEvent) {
+      if (
+        quickTextPanelRef.current?.contains(event.target as Node) ||
+        labelEditorRef.current?.contains(event.target as Node)
+      ) {
+        return
+      }
+
+      closeQuickText()
+    }
+
+    window.addEventListener('mousedown', handlePointerDown)
+    return () => window.removeEventListener('mousedown', handlePointerDown)
+  }, [isQuickTextOpen])
+
+  useEffect(() => {
+    if (!activeFileName || !fileListRef.current) {
+      return
+    }
+
+    const activeItem = fileListRef.current.querySelector<HTMLElement>(`[data-file-name="${CSS.escape(activeFileName)}"]`)
+    activeItem?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  }, [activeFileName])
+
+  useEffect(() => {
+    function handlePointerMove(event: PointerEvent) {
+      const session = labelPanelResizeStateRef.current
+      if (!session) {
+        return
+      }
+
+      const nextWidth = Math.min(560, Math.max(280, session.startWidth - (event.clientX - session.startX)))
+      setLabelPanelWidth(nextWidth)
+    }
+
+    function handlePointerUp() {
+      labelPanelResizeStateRef.current = null
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerUp)
+
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+    }
+  }, [])
+
   return (
     <div className={isDesktop ? 'shell shell-desktop' : 'shell'}>
       <section
@@ -949,6 +1575,12 @@ function App() {
             <div className="settings-popup" onClick={(event) => event.stopPropagation()}>
               <div className="settings-popup-header">
                 <div className="brand-banner settings-brand-banner">
+                  <div className="settings-brand-meta">
+                    <a className="settings-meta-pill" href={projectHomepage} target="_blank" rel="noreferrer">
+                      {text.settings.githubHomepage}
+                    </a>
+                    <span className="settings-meta-pill">v{appVersion}</span>
+                  </div>
                   <p className="eyebrow">LabelPlus Modern Client</p>
                   <h1>LabelPlusX</h1>
                   <p className="subtitle">{text.top.subtitle}</p>
@@ -985,14 +1617,93 @@ function App() {
                 </label>
               </div>
 
-              <div className="settings-section settings-placeholder">
-                <h4>{text.settings.moreOptions}</h4>
-                <p>{text.settings.moreOptionsHint}</p>
+              <div className="settings-section settings-shortcut-section">
+                <button
+                  type="button"
+                  className="ghost-button settings-collapse-button"
+                  onClick={() => setIsQuickTextSettingsOpen((current) => !current)}
+                >
+                  <span>{text.settings.quickText}</span>
+                  <span>{isQuickTextSettingsOpen ? '−' : '+'}</span>
+                </button>
+                {isQuickTextSettingsOpen ? (
+                  <>
+                    <p className="settings-inline-hint">{text.settings.quickTextKeyHint}</p>
+                    <div className="settings-quicktext-list">
+                      {settings.quickTexts.map((item, index) => (
+                        <div key={`${item.key}-${index}`} className="settings-quicktext-row">
+                          <input
+                            type="text"
+                            className="settings-text-input"
+                            value={item.text}
+                            placeholder={text.settings.quickTextText}
+                            onChange={(event) => {
+                              setSettings((current) => ({
+                                ...current,
+                                quickTexts: current.quickTexts.map((entry, entryIndex) =>
+                                  entryIndex === index ? { ...entry, text: event.target.value } : entry,
+                                ),
+                              }))
+                            }}
+                          />
+                          <input
+                            type="text"
+                            className="settings-key-input"
+                            value={item.key}
+                            maxLength={1}
+                            placeholder={text.settings.quickTextKey}
+                            onChange={(event) => {
+                              setSettings((current) => ({
+                                ...current,
+                                quickTexts: current.quickTexts.map((entry, entryIndex) =>
+                                  entryIndex === index ? { ...entry, key: event.target.value.toUpperCase() } : entry,
+                                ),
+                              }))
+                            }}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      className="ghost-button settings-collapse-button"
+                      onClick={() => {
+                        setSettings((current) => ({
+                          ...current,
+                          quickTexts: [...current.quickTexts, { text: '', key: '' }],
+                        }))
+                      }}
+                    >
+                      {text.settings.addQuickText}
+                    </button>
+                  </>
+                ) : null}
               </div>
 
-              <div className="settings-footer">
-                <a href={projectHomepage} target="_blank" rel="noreferrer">{text.settings.githubHomepage}</a>
-                <span>v{appVersion}</span>
+              <div className="settings-section settings-shortcut-section">
+                <button
+                  type="button"
+                  className="ghost-button settings-collapse-button"
+                  onClick={() => setIsShortcutListOpen((current) => !current)}
+                >
+                  <span>{text.settings.shortcutOverview}</span>
+                  <span>{isShortcutListOpen ? '−' : '+'}</span>
+                </button>
+                {isShortcutListOpen ? (
+                  <div className="settings-shortcut-list">
+                    <p>{text.preview.shortcutCategory}</p>
+                    <p>{text.preview.shortcutDelete}</p>
+                    <p>{text.preview.shortcutUndoRedo}</p>
+                    <p>{text.preview.shortcutFile}</p>
+                    <p>{text.preview.shortcutAdvance}</p>
+                    <p>{text.preview.shortcutQuickText}</p>
+                    <p>{text.preview.shortcutHide}</p>
+                    <p>{text.preview.shortcutFit}</p>
+                    <p>{text.preview.shortcutCheck}</p>
+                    <p>{text.preview.shortcutReading}</p>
+                    <p>{text.preview.shortcutFocusEditor}</p>
+                  </div>
+                ) : null}
               </div>
             </div>
           </div>
@@ -1014,6 +1725,37 @@ function App() {
             </div>
           </div>
 
+          <div className="create-panel">
+            <div className="create-dropzone">
+              <div className="import-hub-copy">
+                <div className="import-hub-topline">
+                  <span className="hero-pill">{text.import.createTitle}</span>
+                </div>
+              </div>
+
+              <div className="action-entry">
+                <div className="action-button-wrap">
+                  <button type="button" className="secondary-card action-button" onClick={() => void handleCreateWorkspace()} disabled={isBusy}>
+                    <span className="action-button-title">{text.import.createWorkspace}</span>
+                    <span className="file-picker-cta">{isDesktop ? text.import.chooseFolder : text.import.chooseImages}</span>
+                  </button>
+                  <div className="action-button-tooltip" role="tooltip">
+                    {isDesktop ? text.import.createWorkspaceDesktopHint : text.import.createWorkspaceWebHint}
+                  </div>
+                </div>
+              </div>
+
+              <input
+                ref={newWorkspaceImageInputRef}
+                className="hidden-file-input"
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handleNewWorkspaceImageFilesChange}
+              />
+            </div>
+          </div>
+
           <div className="import-panel">
             <div
               className={isDragging ? 'import-dropzone drag-active' : 'import-dropzone'}
@@ -1025,8 +1767,6 @@ function App() {
                 <div className="import-hub-topline">
                   <span className="hero-pill">{text.import.title}</span>
                 </div>
-                <h2>{isDragging ? text.import.draggingTitle : text.import.idleTitle}</h2>
-                <p>{text.import.description}</p>
                 {hasUnsavedLocalEdits ? (
                   <p className="storage-hint">
                     {settings.autoSave
@@ -1039,11 +1779,22 @@ function App() {
               </div>
 
               <div className={isDesktop ? 'action-grid action-grid--wide action-grid--single' : 'action-grid action-grid--wide'}>
-                <button type="button" className="primary-button action-button" onClick={() => void handleImportLabelText()} disabled={isBusy}>
-                  <span>{isBusy ? text.import.loading : text.import.importText}</span>
-                  <small>{isDesktop ? text.import.importTextDesktopHint : text.import.importTextWebHint}</small>
-                  <span className="file-picker-cta">{text.import.chooseTxt}</span>
-                </button>
+                <div className="action-entry">
+                  <div className="action-button-wrap">
+                    <button
+                      type="button"
+                      className="primary-button action-button"
+                      onClick={() => void handleImportLabelText()}
+                      disabled={isBusy}
+                    >
+                      <span className="action-button-title">{isBusy ? text.import.loading : text.import.importText}</span>
+                      <span className="file-picker-cta">{text.import.chooseTxt}</span>
+                    </button>
+                    <div className="action-button-tooltip" role="tooltip">
+                      {isDesktop ? text.import.importTextDesktopSubHint : text.import.importTextWebSubHint}
+                    </div>
+                  </div>
+                </div>
 
                 <input
                   ref={labelFileInputRef}
@@ -1054,12 +1805,18 @@ function App() {
                 />
 
                 {!isDesktop ? (
-                  <label className="secondary-card action-button">
-                    <span>{text.import.linkImages}</span>
-                    <small>{text.import.linkImagesHint}</small>
-                    <span className="file-picker-cta">{text.import.chooseImages}</span>
-                    <input type="file" accept="image/*" multiple onChange={handleImageFilesChange} />
-                  </label>
+                  <div className="action-entry">
+                    <div className="action-button-wrap">
+                      <label className="secondary-card action-button">
+                        <span className="action-button-title">{text.import.linkImages}</span>
+                        <span className="file-picker-cta">{text.import.chooseImages}</span>
+                        <input type="file" accept="image/*" multiple onChange={handleImageFilesChange} />
+                      </label>
+                      <div className="action-button-tooltip" role="tooltip">
+                        {text.import.linkImagesHint}
+                      </div>
+                    </div>
+                  </div>
                 ) : null}
               </div>
             </div>
@@ -1067,18 +1824,19 @@ function App() {
         </div>
       </section>
 
-      <main className="workspace-layout">
+      <main className="workspace-layout" style={{ '--label-panel-width': `${labelPanelWidth}px` } as CSSProperties}>
         <aside className="panel file-panel">
           <div className="panel-header">
             <h3>{text.workspace.files}</h3>
             <p>{workspace?.source === 'desktop' ? text.workspace.desktopMode : text.workspace.webMode}</p>
           </div>
 
-          <div className="file-list">
+          <div ref={fileListRef} className="file-list">
             {workspace?.files.length ? (
               workspace.files.map((file) => (
                 <button
                   key={file.name}
+                  data-file-name={file.name}
                   type="button"
                   className={file.name === activeFileName ? 'file-item active' : 'file-item'}
                   onClick={() => selectFile(file.name)}
@@ -1105,9 +1863,9 @@ function App() {
 
           <div className="workspace-meta">
             <h4>{text.workspace.groups}</h4>
-            <div className="chips">
-              {workspace?.groups.length ? (
-                workspace.groups.map((group, index) => (
+            <div className="chips chips-with-actions">
+              {workspace ? (
+                getVisibleGroupNames().map((group, index) => (
                   <button
                     key={`${group}-${index}`}
                     type="button"
@@ -1115,13 +1873,39 @@ function App() {
                     style={getCategoryChipStyle(index + 1)}
                     onClick={() => setSelectedCategory(index + 1)}
                   >
-                    {index + 1}. {group}
+                    {`${group || getResolvedGroupName(index + 1)}(${index + 1})`}
                   </button>
                 ))
               ) : (
                 <span className="chip muted">{text.workspace.noGroups}</span>
               )}
+              {workspace && getVisibleGroupNames().length < 9 ? (
+                <button type="button" className="chip chip-selectable chip-add" onClick={addGroup}>
+                  +
+                </button>
+              ) : null}
             </div>
+
+            {workspace ? (
+              <div className="group-edit-list">
+                {getVisibleGroupNames().map((group, index) => (
+                  <label key={`group-edit-${index}`} className="group-edit-row">
+                    <span>{index + 1}</span>
+                    <input value={group} onChange={(event) => updateGroupName(index, event.target.value)} />
+                    <button
+                      type="button"
+                      className="group-delete-button"
+                      onClick={() => deleteGroup(index)}
+                      disabled={!canDeleteGroup(index)}
+                      aria-label={`删除分组 ${index + 1}`}
+                      title={canDeleteGroup(index) ? `删除分组 ${index + 1}` : '仅空分组可删除，且至少保留一个分组'}
+                    >
+                      -
+                    </button>
+                  </label>
+                ))}
+              </div>
+            ) : null}
 
             <h4>{text.workspace.comment}</h4>
             <textarea
@@ -1140,16 +1924,38 @@ function App() {
               <p>{activeFile?.imageSrc ? text.preview.imageMatched : status}</p>
             </div>
             <div className="preview-toolbar">
-              <button type="button" className="ghost-button preview-reset-button" onClick={fitPreview}>
-                {text.preview.fit}
-              </button>
-              <button type="button" className="ghost-button preview-zoom-button" onClick={() => zoomPreview(-0.1)}>
-                -
-              </button>
-              <span className="preview-zoom-value">{Math.round(previewZoom * 100)}%</span>
-              <button type="button" className="ghost-button preview-zoom-button" onClick={() => zoomPreview(0.1)}>
-                +
-              </button>
+              <div className="preview-help-wrap">
+                <button
+                  type="button"
+                  className="ghost-button preview-help-button"
+                  aria-label={text.preview.helpLabel}
+                  title={text.preview.helpLabel}
+                >
+                  <CircleHelp aria-hidden="true" />
+                </button>
+                <div className="preview-help-tooltip" role="tooltip">
+                  <strong>{text.preview.helpTitle}</strong>
+                  <p>{text.preview.helpMove}</p>
+                  <p>{text.preview.helpAdd}</p>
+                  <p>{text.preview.helpDelete}</p>
+                  <p>{text.preview.helpDrag}</p>
+                  <p>{text.preview.helpZoom}</p>
+                </div>
+              </div>
+              <div className="preview-zoom-cluster">
+                <button type="button" className="ghost-button preview-reset-button" onClick={fitPreview}>
+                  {text.preview.fit}
+                </button>
+                <div className="preview-zoom-group">
+                  <button type="button" className="ghost-button preview-zoom-button" onClick={() => zoomPreview(-0.1)} aria-label="缩小">
+                    <Minus aria-hidden="true" />
+                  </button>
+                  <span className="preview-zoom-value">{Math.round(previewZoom * 100)}%</span>
+                  <button type="button" className="ghost-button preview-zoom-button" onClick={() => zoomPreview(0.1)} aria-label="放大">
+                    <Plus aria-hidden="true" />
+                  </button>
+                </div>
+              </div>
               <button
                 type="button"
                 className={isCheckMode ? 'export-button preview-check-button' : 'ghost-button preview-check-button'}
@@ -1173,6 +1979,9 @@ function App() {
                   onPointerMove={handleFramePointerMove}
                   onPointerUp={handleFramePointerUp}
                   onPointerCancel={handleFramePointerUp}
+                  onPointerLeave={() => {
+                    previewPointerRef.current.inside = false
+                  }}
                 >
                   <div className="preview-pan-layer" style={{ transform: `translate(${previewPan.x}px, ${previewPan.y}px)` }}>
                     <div className="preview-scale-layer" style={{ transform: `scale(${previewZoom})` }}>
@@ -1188,7 +1997,7 @@ function App() {
                         height: imageNaturalSize.height > 0 ? `${imageNaturalSize.height}px` : undefined,
                       }}
                     />
-                    <div className="marker-layer">
+                    <div className={arePreviewLabelsHidden ? 'marker-layer marker-layer-hidden' : 'marker-layer'}>
                       {activeFile.labels.map((label) => (
                         <div key={label.id} className="marker-group" style={{ left: `${label.xPercent * 100}%`, top: `${label.yPercent * 100}%` }}>
                           <button
@@ -1200,6 +2009,7 @@ function App() {
                             }
                             style={getMarkerStyle(label.category)}
                             onClick={() => selectLabel(label)}
+                            onDoubleClick={() => selectLabel(label, true)}
                             onContextMenu={(event) => {
                               event.preventDefault()
                               event.stopPropagation()
@@ -1226,8 +2036,30 @@ function App() {
                         </div>
                       ))}
                     </div>
+                    {isQuickTextOpen && quickTextMode === 'preview' && previewQuickTextAnchor ? (
+                      null
+                    ) : null}
                   </div>
                   </div>
+                  {isQuickTextOpen && quickTextMode === 'preview' && previewQuickTextAnchor ? (
+                    <div
+                      ref={quickTextPanelRef}
+                      className="quicktext-panel quicktext-panel-preview"
+                      style={{ left: `${previewQuickTextAnchor.x}px`, top: `${previewQuickTextAnchor.y}px` }}
+                    >
+                      {settings.quickTexts.filter((item) => item.text).map((item, index) => (
+                        <button
+                          key={`${item.key}-${item.text}-${index}`}
+                          type="button"
+                          className="quicktext-item"
+                          onClick={() => insertQuickText(item.text)}
+                        >
+                          <span>{item.text}</span>
+                          <kbd>{item.key || '-'}</kbd>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
               ) : (
                 <div className="empty-state">{text.preview.emptyWithDesktop}</div>
@@ -1237,6 +2069,18 @@ function App() {
             <div className="empty-state">{text.preview.emptyBeforeWorkspace}</div>
           )}
         </section>
+
+        <div
+          className="label-panel-resizer"
+          onPointerDown={(event) => {
+            labelPanelResizeStateRef.current = { startX: event.clientX, startWidth: labelPanelWidth }
+            document.body.style.cursor = 'col-resize'
+            document.body.style.userSelect = 'none'
+          }}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="调整翻译内容宽度"
+        />
 
         <aside className="panel label-panel">
           <div className="panel-header">
@@ -1260,13 +2104,14 @@ function App() {
                     type="button"
                     className={label.id === activeLabelId ? (label.text.trim() ? 'label-item active' : 'label-item label-item-empty active') : (label.text.trim() ? 'label-item' : 'label-item label-item-empty')}
                     onClick={() => selectLabel(label)}
+                    onDoubleClick={() => selectLabel(label, true)}
                   >
-                    <div className="label-item-top">
-                      <span className="label-index">#{label.id}</span>
-                      <span className="label-category" style={{ color: getCategoryColor(label.category) }}>{text.labels.group(label.category)}</span>
-                    </div>
-                    <p>{label.text || text.labels.emptyText}</p>
-                  </button>
+                      <div className="label-item-top label-item-row">
+                        <span className="label-index">#{label.id}</span>
+                        <span className="label-category" style={{ color: getCategoryColor(label.category) }}>{getGroupDisplayName(label.category)}</span>
+                        <span className="label-item-text">{label.text || text.labels.emptyText}</span>
+                      </div>
+                    </button>
                 ))}
               </div>
 
@@ -1292,18 +2137,36 @@ function App() {
                         value={activeLabel.category}
                         onChange={(event) => updateActiveLabelCategory(Number(event.target.value))}
                       >
-                        {(workspace?.groups.length ? workspace.groups : Array.from({ length: 9 }, (_, index) => text.labels.groupFallback(index + 1))).map((group, index) => (
+                        {getVisibleGroupNames().map((group, index) => (
                           <option key={`${group}-${index + 1}`} value={index + 1}>
-                            {index + 1}. {group || text.labels.groupFallback(index + 1)}
+                            {`${group || text.labels.groupFallback(index + 1)}(${index + 1})`}
                           </option>
                         ))}
                       </select>
                     </label>
-                    <textarea
-                      value={activeLabel.text}
-                      onChange={(event) => updateActiveLabelText(event.target.value)}
-                      placeholder={text.labels.textPlaceholder}
-                    />
+                    <div className="label-editor-wrap">
+                      <textarea
+                        ref={labelEditorRef}
+                        value={activeLabel.text}
+                        onChange={(event) => updateActiveLabelText(event.target.value)}
+                        placeholder={text.labels.textPlaceholder}
+                      />
+                      {isQuickTextOpen && quickTextMode === 'editor' ? (
+                        <div ref={quickTextPanelRef} className="quicktext-panel">
+                          {settings.quickTexts.filter((item) => item.text).map((item, index) => (
+                            <button
+                              key={`${item.key}-${item.text}-${index}`}
+                              type="button"
+                              className="quicktext-item"
+                              onClick={() => insertQuickText(item.text)}
+                            >
+                              <span>{item.text}</span>
+                              <kbd>{item.key || '-'}</kbd>
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
                     <div className="editor-actions">
                       <button type="button" className="ghost-button" onClick={handleSaveLocal}>
                         {isDesktop ? text.labels.saveDesktop : text.labels.saveBrowser}
