@@ -28,6 +28,10 @@
   font-size: 0.88rem;
 }
 
+.shell-desktop .top-section-body {
+  grid-template-columns: minmax(0, 1.15fr) minmax(20rem, 22rem) minmax(24rem, 27rem);
+}
+
 .top-section,
 .panel,
 .stat-card {
@@ -111,7 +115,7 @@
 
 .top-section-body {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(22rem, 24rem) minmax(28rem, 34rem);
+  grid-template-columns: minmax(18rem, 0.78fr) minmax(19rem, 21rem) minmax(27rem, 32rem);
   align-items: stretch;
   gap: 0.85rem;
   min-width: 0;
@@ -690,6 +694,15 @@
 
 .action-grid--single {
   grid-template-columns: 1fr;
+}
+
+.shell-desktop .import-dropzone .action-grid--single {
+  justify-self: start;
+  width: fit-content;
+}
+
+.shell-desktop .import-dropzone .action-grid--single .action-entry {
+  width: max-content;
 }
 
 .primary-button,
