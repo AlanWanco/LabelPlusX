@@ -11,8 +11,35 @@ permissions:
   packages: write
 
 jobs:
+  prepare:
+    name: Resolve release tag
+    runs-on: ubuntu-22.04
+    outputs:
+      tag_name: ${{ steps.resolve.outputs.tag_name }}
+      version: ${{ steps.resolve.outputs.version }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve tag from project version
+        id: resolve
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          TAG_NAME="v${VERSION}"
+
+          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref_name }}" != "$TAG_NAME" ]; then
+            echo "Pushed tag ${{ github.ref_name }} does not match project version ${TAG_NAME}" >&2
+            exit 1
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag_name=$TAG_NAME" >> "$GITHUB_OUTPUT"
+
   desktop:
     name: Release ${{ matrix.platform.label }}
+    needs: prepare
     strategy:
       fail-fast: false
       matrix:
@@ -69,6 +96,7 @@ jobs:
 
   docker:
     name: Release Docker image
+    needs: prepare
     runs-on: ubuntu-22.04
 
     steps:
@@ -94,7 +122,8 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository_owner }}/labelplusx
           tags: |
-            type=ref,event=tag
+            type=raw,value=${{ needs.prepare.outputs.tag_name }}
+            type=raw,value=${{ needs.prepare.outputs.version }}
             type=raw,value=latest
 
       - name: Build and push Docker image
@@ -112,6 +141,7 @@ jobs:
   publish:
     name: Publish GitHub Release
     needs:
+      - prepare
       - desktop
       - docker
     runs-on: ubuntu-22.04
@@ -130,5 +160,8 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.prepare.outputs.tag_name }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ needs.prepare.outputs.tag_name }}
           generate_release_notes: true
           files: release-files/*
