@@ -1,6 +1,6 @@
 [package]
 name = "labelplusx"
-version = "0.1.0"
+version = "0.1.1"
 description = "Modern LabelPlus client"
 authors = ["OpenCode"]
 edition = "2021"
