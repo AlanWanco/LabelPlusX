@@ -1383,13 +1383,13 @@ function App() {
 
         if (event.key === 'ArrowUp') {
           event.preventDefault()
-          selectRelativeLabel(-1, { shouldFocusEditor: isEditable })
+          selectRelativeLabel(-1, { shouldFocusEditor: isEditable, shouldCenter: true })
           return
         }
 
         if (event.key === 'ArrowDown') {
           event.preventDefault()
-          selectRelativeLabel(1, { shouldFocusEditor: isEditable })
+          selectRelativeLabel(1, { shouldFocusEditor: isEditable, shouldCenter: true })
           return
         }
 

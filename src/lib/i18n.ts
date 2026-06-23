@@ -106,7 +106,7 @@ export const text = {
     shortcutDelete: '按 Delete / Backspace：删除当前选中的 label',
     shortcutUndoRedo: '撤销 / 重做：macOS 用 Cmd + Z / Cmd + Y，其他平台用 Ctrl + Z / Ctrl + Y',
     shortcutFile: '切图：左右方向键切上一张 / 下一张；如果光标在编辑框里，就用 Cmd / Ctrl + 左右',
-    shortcutAdvance: '切换翻译：Cmd / Ctrl + ↑ / ↓ 可切到上一条 / 下一条；Cmd / Ctrl + Enter 会跳到下一条，并保持当前图片缩放和定位',
+    shortcutAdvance: '切换翻译：Cmd / Ctrl + ↑ / ↓ 可切到上一条 / 下一条并自动定位；Cmd / Ctrl + Enter 会跳到下一条，并保持当前图片缩放和定位',
     shortcutHide: '按住 V：临时隐藏预览里的所有 label，松开恢复',
     shortcutFit: '按 R：让图片重新适配到当前预览区',
     shortcutCheck: '按 C：打开或关闭检查视图',
