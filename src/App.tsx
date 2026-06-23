@@ -670,7 +670,7 @@ function App() {
     selectFile(workspace.files[nextIndex].name)
   }
 
-  function selectRelativeLabel(offset: number, shouldFocusEditor = false) {
+  function selectRelativeLabel(offset: number, options?: { shouldFocusEditor?: boolean; shouldCenter?: boolean }) {
     if (!activeFile?.labels.length) {
       return
     }
@@ -681,8 +681,8 @@ function App() {
       return
     }
 
-    selectLabel(activeFile.labels[nextIndex], shouldFocusEditor)
-    if (shouldFocusEditor) {
+    selectLabel(activeFile.labels[nextIndex], options?.shouldCenter ?? false)
+    if (options?.shouldFocusEditor) {
       focusActiveLabelEditor()
     }
   }
@@ -1377,7 +1377,19 @@ function App() {
 
         if (key === 'enter' && isEditable) {
           event.preventDefault()
-          selectRelativeLabel(1, true)
+          selectRelativeLabel(1, { shouldFocusEditor: true, shouldCenter: true })
+          return
+        }
+
+        if (event.key === 'ArrowUp') {
+          event.preventDefault()
+          selectRelativeLabel(-1, { shouldFocusEditor: isEditable })
+          return
+        }
+
+        if (event.key === 'ArrowDown') {
+          event.preventDefault()
+          selectRelativeLabel(1, { shouldFocusEditor: isEditable })
           return
         }
 
