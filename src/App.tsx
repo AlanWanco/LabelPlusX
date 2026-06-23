@@ -180,6 +180,8 @@ function App() {
   const labelTextUndoCapturedRef = useRef(false)
   const commentUndoCapturedRef = useRef(false)
   const groupUndoCapturedRef = useRef<number | null>(null)
+  const pendingFileZoomModeRef = useRef<'fit' | 'preserve'>('fit')
+  const pendingFileZoomRef = useRef<number | null>(null)
   const previewPointerRef = useRef<{ xPercent: number; yPercent: number; clientX: number; clientY: number; inside: boolean }>({
     xPercent: 0.5,
     yPercent: 0.5,
@@ -575,9 +577,19 @@ function App() {
 
   function selectFile(fileName: string) {
     const file = workspace?.files.find((item) => item.name === fileName)
+
+    if (imageNaturalSize.width > 0 && imageNaturalSize.height > 0) {
+      const fitZoom = getFitZoomForSize(imageNaturalSize.width, imageNaturalSize.height)
+      const isUsingFitZoom = Math.abs(previewZoom - fitZoom) <= 0.001
+      pendingFileZoomModeRef.current = isUsingFitZoom ? 'fit' : 'preserve'
+      pendingFileZoomRef.current = isUsingFitZoom ? null : previewZoom
+    } else {
+      pendingFileZoomModeRef.current = 'fit'
+      pendingFileZoomRef.current = null
+    }
+
     setActiveFileName(fileName)
     setActiveLabelId(file?.labels[0]?.id ?? null)
-    setPreviewZoom(1)
     setPreviewPan({ x: 0, y: 0 })
     setImageNaturalSize({ width: 0, height: 0 })
   }
@@ -996,17 +1008,24 @@ function App() {
     return Math.min(maxPreviewZoom, Math.max(minPreviewZoom, Number(nextZoom.toFixed(3))))
   }
 
-  function fitPreviewToSize(width: number, height: number) {
+  function getFitZoomForSize(width: number, height: number) {
     const frame = imageFrameRef.current
     if (!frame || width <= 0 || height <= 0) {
-      return
+      return 1
     }
 
     const frameRect = frame.getBoundingClientRect()
     const fitByHeight = frameRect.width >= frameRect.height
     const nextZoom = fitByHeight ? frameRect.height / height : frameRect.width / width
+    return clampZoom(nextZoom)
+  }
 
-    setPreviewZoom(clampZoom(nextZoom))
+  function fitPreviewToSize(width: number, height: number) {
+    if (width <= 0 || height <= 0) {
+      return
+    }
+
+    setPreviewZoom(getFitZoomForSize(width, height))
     setPreviewPan({ x: 0, y: 0 })
     hasManualPreviewTransformRef.current = false
   }
@@ -1070,10 +1089,20 @@ function App() {
     }
 
     setImageNaturalSize(nextSize)
-    hasManualPreviewTransformRef.current = false
 
     requestAnimationFrame(() => {
+      if (pendingFileZoomModeRef.current === 'preserve' && pendingFileZoomRef.current !== null) {
+        setPreviewZoom(clampZoom(pendingFileZoomRef.current))
+        setPreviewPan({ x: 0, y: 0 })
+        hasManualPreviewTransformRef.current = true
+        pendingFileZoomModeRef.current = 'fit'
+        pendingFileZoomRef.current = null
+        return
+      }
+
       fitPreviewToSize(nextSize.width, nextSize.height)
+      pendingFileZoomModeRef.current = 'fit'
+      pendingFileZoomRef.current = null
     })
   }
 
