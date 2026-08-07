@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="public/logo.svg" width="180" alt="LabelPlusX logo" />
+</p>
+
 # LabelPlusX
 
 LabelPlusX 是一个现代化、多平台的 LabelPlus 客户端，面向漫画、条漫、图片翻译等工作流。
