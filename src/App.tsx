@@ -35,6 +35,11 @@ const appVersion = packageJson.version
 const projectHomepage = 'https://github.com/AlanWanco/LabelPlusX'
 const editableSelector = 'input, textarea, select, [contenteditable="true"]'
 const defaultGroupNames = ['框内', '框外']
+
+function getNowTimestamp() {
+  return Date.now()
+}
+
 const defaultQuickTexts = [
   { text: '啊', key: 'A' },
   { text: '嗯', key: 'E' },
@@ -178,7 +183,11 @@ function App() {
   const quickTextPanelRef = useRef<HTMLDivElement | null>(null)
   const labelPanelResizeStateRef = useRef<{ startX: number; startWidth: number } | null>(null)
   const labelTextUndoCapturedRef = useRef(false)
+  const labelTextUndoLastCaptureAtRef = useRef(0)
+  const labelTextUndoLastValueRef = useRef('')
   const commentUndoCapturedRef = useRef(false)
+  const commentUndoLastCaptureAtRef = useRef(0)
+  const commentUndoLastValueRef = useRef('')
   const groupUndoCapturedRef = useRef<number | null>(null)
   const pendingFileZoomModeRef = useRef<'fit' | 'preserve'>('fit')
   const pendingFileZoomRef = useRef<number | null>(null)
@@ -325,6 +334,30 @@ function App() {
       undoHistoryRef.current.shift()
     }
     redoHistoryRef.current = []
+  }
+
+  function captureProgressiveUndo(
+    value: string,
+    capturedRef: { current: boolean },
+    lastCaptureAtRef: { current: number },
+    lastValueRef: { current: string },
+  ) {
+    if (!capturedRef.current) {
+      return
+    }
+
+    const now = getNowTimestamp()
+    const elapsed = now - lastCaptureAtRef.current
+    const lastValue = lastValueRef.current
+    const isBigJump = Math.abs(value.length - lastValue.length) >= 20
+
+    if (elapsed < 700 && !isBigJump) {
+      return
+    }
+
+    pushUndoSnapshot()
+    lastCaptureAtRef.current = now
+    lastValueRef.current = value
   }
 
   function undoLastChange() {
@@ -1681,7 +1714,9 @@ function App() {
           <div className="settings-overlay" onClick={() => setIsSettingsOpen(false)}>
             <div className="settings-popup" onClick={(event) => event.stopPropagation()}>
               <div className="settings-popup-header">
-                <div className="brand-banner settings-brand-banner">
+              <div className="brand-banner settings-brand-banner">
+                <img className="brand-logo" src="/logo.svg" alt="LabelPlusX logo" />
+                <div className="brand-text">
                   <div className="settings-brand-meta">
                     <a className="settings-meta-pill" href={projectHomepage} target="_blank" rel="noreferrer">
                       {text.settings.githubHomepage}
@@ -1692,6 +1727,7 @@ function App() {
                   <h1>LabelPlusX</h1>
                   <p className="subtitle">{text.top.subtitle}</p>
                 </div>
+              </div>
                 <h3>{text.settings.title}</h3>
               </div>
 
@@ -1826,9 +1862,12 @@ function App() {
         <div className="top-section-body">
           <div className="topbar">
             <div className="brand-banner">
-              <p className="eyebrow">LabelPlus Modern Client</p>
-              <h1>LabelPlusX</h1>
-              <p className="subtitle">{text.top.subtitle}</p>
+              <img className="brand-logo" src="/logo.svg" alt="LabelPlusX logo" />
+              <div className="brand-text">
+                <p className="eyebrow">LabelPlus Modern Client</p>
+                <h1>LabelPlusX</h1>
+                <p className="subtitle">{text.top.subtitle}</p>
+              </div>
             </div>
           </div>
 
@@ -2036,12 +2075,23 @@ function App() {
                 if (!commentUndoCapturedRef.current) {
                   pushUndoSnapshot()
                   commentUndoCapturedRef.current = true
+                  commentUndoLastCaptureAtRef.current = getNowTimestamp()
+                  commentUndoLastValueRef.current = workspace?.comment ?? ''
                 }
               }}
               onBlur={() => {
                 commentUndoCapturedRef.current = false
               }}
-              onChange={(event) => updateComment(event.target.value, { captureHistory: false })}
+              onChange={(event) => {
+                const value = event.target.value
+                updateComment(value, { captureHistory: false })
+                captureProgressiveUndo(
+                  value,
+                  commentUndoCapturedRef,
+                  commentUndoLastCaptureAtRef,
+                  commentUndoLastValueRef,
+                )
+              }}
               placeholder={text.workspace.commentPlaceholder}
             />
           </div>
@@ -2282,12 +2332,23 @@ function App() {
                           if (!labelTextUndoCapturedRef.current) {
                             pushUndoSnapshot()
                             labelTextUndoCapturedRef.current = true
+                            labelTextUndoLastCaptureAtRef.current = getNowTimestamp()
+                            labelTextUndoLastValueRef.current = activeLabel?.text ?? ''
                           }
                         }}
                         onBlur={() => {
                           labelTextUndoCapturedRef.current = false
                         }}
-                        onChange={(event) => updateActiveLabelText(event.target.value, { captureHistory: false })}
+                        onChange={(event) => {
+                          const value = event.target.value
+                          updateActiveLabelText(value, { captureHistory: false })
+                          captureProgressiveUndo(
+                            value,
+                            labelTextUndoCapturedRef,
+                            labelTextUndoLastCaptureAtRef,
+                            labelTextUndoLastValueRef,
+                          )
+                        }}
                         placeholder={text.labels.textPlaceholder}
                       />
                       {isQuickTextOpen && quickTextMode === 'editor' ? (

@@ -183,6 +183,23 @@
 }
 
 .brand-banner {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.brand-logo {
+  width: 64px;
+  height: 64px;
+  flex-shrink: 0;
+  border-radius: 17px;
+  box-shadow:
+    0 10px 26px -10px rgb(74 10 153 / 55%),
+    inset 0 0 0 1px rgb(255 255 255 / 14%);
+}
+
+.brand-text {
   display: grid;
   gap: 0.1rem;
   min-width: 0;
@@ -190,6 +207,12 @@
 
 .settings-brand-banner h1 {
   font-size: clamp(1.7rem, 2vw, 2.15rem);
+}
+
+.settings-brand-banner .brand-logo {
+  width: 48px;
+  height: 48px;
+  border-radius: 13px;
 }
 
 .eyebrow {
