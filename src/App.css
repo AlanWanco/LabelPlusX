@@ -1222,11 +1222,16 @@
   -webkit-user-select: none;
 }
 
+.preview-content-layer {
+  position: relative;
+  flex: 0 0 auto;
+}
+
 .preview-scale-layer {
   position: relative;
   width: fit-content;
   height: fit-content;
-  transform-origin: top center;
+  transform-origin: top left;
 }
 
 .preview-image {

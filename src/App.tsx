@@ -222,6 +222,8 @@ function App() {
   const activeLabelIndex = activeFile?.labels.findIndex((label) => label.id === activeLabelId) ?? -1
   const untranslatedLabels = activeFile?.labels.filter((label) => label.text.trim().length === 0) ?? []
   const firstUntranslatedLabel = untranslatedLabels[0] ?? null
+  const scaledPreviewWidth = imageNaturalSize.width > 0 ? imageNaturalSize.width * previewZoom : 0
+  const scaledPreviewHeight = imageNaturalSize.height > 0 ? imageNaturalSize.height * previewZoom : 0
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
@@ -2164,62 +2166,67 @@ function App() {
                   }}
                 >
                   <div className="preview-pan-layer" style={{ transform: `translate(${previewPan.x}px, ${previewPan.y}px)` }}>
-                    <div className="preview-scale-layer" style={{ transform: `scale(${previewZoom})` }}>
-                    <img
-                      ref={previewImageRef}
-                       src={activeFileImageSrc}
-                      alt={activeFile.name}
-                      className="preview-image"
-                      onLoad={handlePreviewImageLoad}
-                      onError={() => setStatus(text.status.imageLoadFailed(activeFile.name))}
+                    <div
+                      className="preview-content-layer"
                       style={{
-                        width: imageNaturalSize.width > 0 ? `${imageNaturalSize.width}px` : undefined,
-                        height: imageNaturalSize.height > 0 ? `${imageNaturalSize.height}px` : undefined,
+                        width: scaledPreviewWidth > 0 ? `${scaledPreviewWidth}px` : undefined,
+                        height: scaledPreviewHeight > 0 ? `${scaledPreviewHeight}px` : undefined,
                       }}
-                    />
-                    <div className={arePreviewLabelsHidden ? 'marker-layer marker-layer-hidden' : 'marker-layer'}>
-                      {activeFile.labels.map((label) => (
-                        <div key={label.id} className="marker-group" style={{ left: `${label.xPercent * 100}%`, top: `${label.yPercent * 100}%` }}>
-                          <button
-                            type="button"
-                            className={
-                              label.id === activeLabelId
-                                ? 'marker active'
-                                : 'marker'
-                            }
-                            style={getMarkerStyle(label.category)}
-                            onClick={() => selectLabel(label)}
-                            onDoubleClick={() => selectLabel(label, true)}
-                            onContextMenu={(event) => {
-                              event.preventDefault()
-                              event.stopPropagation()
-                              deleteLabel(label.id)
-                            }}
-                            onPointerDown={(event) => handleMarkerPointerDown(event, label.id)}
-                            title={label.text || `Label ${label.id}`}
-                          >
-                             {label.id}
-                           </button>
-
-                          {isCheckMode && label.text ? (
-                            <div
+                    >
+                      <div className="preview-scale-layer" style={{ transform: `scale(${previewZoom})` }}>
+                        <img
+                          ref={previewImageRef}
+                          src={activeFileImageSrc}
+                          alt={activeFile.name}
+                          className="preview-image"
+                          onLoad={handlePreviewImageLoad}
+                          onError={() => setStatus(text.status.imageLoadFailed(activeFile.name))}
+                          style={{
+                            width: imageNaturalSize.width > 0 ? `${imageNaturalSize.width}px` : undefined,
+                            height: imageNaturalSize.height > 0 ? `${imageNaturalSize.height}px` : undefined,
+                          }}
+                        />
+                      </div>
+                      <div className={arePreviewLabelsHidden ? 'marker-layer marker-layer-hidden' : 'marker-layer'}>
+                        {activeFile.labels.map((label) => (
+                          <div key={label.id} className="marker-group" style={{ left: `${label.xPercent * 100}%`, top: `${label.yPercent * 100}%` }}>
+                            <button
+                              type="button"
                               className={
-                                readingMode === 'vertical'
-                                  ? 'check-label check-label-vertical'
-                                  : 'check-label check-label-horizontal'
+                                label.id === activeLabelId
+                                  ? 'marker active'
+                                  : 'marker'
                               }
-                              style={{ fontSize: `${settings.checkFontSize}px` }}
+                              style={getMarkerStyle(label.category)}
+                              onClick={() => selectLabel(label)}
+                              onDoubleClick={() => selectLabel(label, true)}
+                              onContextMenu={(event) => {
+                                event.preventDefault()
+                                event.stopPropagation()
+                                deleteLabel(label.id)
+                              }}
+                              onPointerDown={(event) => handleMarkerPointerDown(event, label.id)}
+                              title={label.text || `Label ${label.id}`}
                             >
-                              {label.text}
-                            </div>
-                          ) : null}
-                        </div>
-                      ))}
+                              {label.id}
+                            </button>
+
+                            {isCheckMode && label.text ? (
+                              <div
+                                className={
+                                  readingMode === 'vertical'
+                                    ? 'check-label check-label-vertical'
+                                    : 'check-label check-label-horizontal'
+                                }
+                                style={{ fontSize: `${settings.checkFontSize}px` }}
+                              >
+                                {label.text}
+                              </div>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                    {isQuickTextOpen && quickTextMode === 'preview' && previewQuickTextAnchor ? (
-                      null
-                    ) : null}
-                  </div>
                   </div>
                   {isQuickTextOpen && quickTextMode === 'preview' && previewQuickTextAnchor ? (
                     <div
