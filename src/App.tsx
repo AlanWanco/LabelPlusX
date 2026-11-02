@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import type { ChangeEvent, CSSProperties, MouseEvent as ReactMouseEvent } from 'react'
-import { ArrowLeft, ChevronRight, CircleHelp, Download, FolderOpen, Image as ImageIcon, Keyboard, Maximize2, Minus, Moon, Palette, Plus, Save, Settings, SunMedium, TextCursorInput, Trash2 } from 'lucide-react'
+import { ALargeSmall, ArrowLeft, ChevronRight, CircleHelp, Download, FolderOpen, Image as ImageIcon, Keyboard, Maximize2, Minus, Moon, Palette, Plus, Save, Settings, SunMedium, TextCursorInput, Trash2, Type, ZoomIn } from 'lucide-react'
 import './App.css'
 import packageJson from '../package.json'
 import {
@@ -31,6 +31,8 @@ const readingModeStorageKey = 'labelplusx-reading-mode'
 const settingsStorageKey = 'labelplusx-settings'
 type SettingsDetail = 'quickText' | 'shortcuts'
 
+const minUiScale = 0.8
+const maxUiScale = 1.5
 const exportFileName = 'labelplus-export.txt'
 const minPreviewZoom = 0.1
 const maxPreviewZoom = 8
@@ -39,6 +41,14 @@ const appVersion = packageJson.version
 const projectHomepage = 'https://github.com/AlanWanco/LabelPlusX'
 const editableSelector = 'input, textarea, select, [contenteditable="true"]'
 const defaultGroupNames = ['框内', '框外']
+
+function clampUiScale(value: number) {
+  if (!Number.isFinite(value)) {
+    return 1
+  }
+
+  return Math.min(maxUiScale, Math.max(minUiScale, Math.round(value * 100) / 100))
+}
 
 function getNowTimestamp() {
   return Date.now()
@@ -71,8 +81,11 @@ interface QuickTextItem {
 interface AppSettings {
   autoSave: boolean
   checkFontSize: number
+  groupColors: string[]
+  labelFontSize: number
   palette: PaletteId
   quickTexts: QuickTextItem[]
+  uiScale: number
 }
 
 interface EditorSnapshot {
@@ -108,36 +121,47 @@ function getInitialTheme(): ThemeMode {
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
 }
 
-function getInitialSettings() {
+const defaultLabelFontSize = 16
+const minLabelFontSize = 12
+const maxLabelFontSize = 22
+
+function createDefaultSettings(): AppSettings {
+  return {
+    autoSave: true,
+    checkFontSize: 16,
+    groupColors: [...categoryColors],
+    labelFontSize: defaultLabelFontSize,
+    palette: defaultPalette,
+    quickTexts: defaultQuickTexts,
+    uiScale: 1,
+  }
+}
+
+function normalizeGroupColors(value: unknown): string[] {
+  const source = Array.isArray(value) ? value : []
+  return categoryColors.map((fallback, index) => {
+    const candidate = source[index]
+    return typeof candidate === 'string' && /^#[0-9a-f]{6}$/i.test(candidate) ? candidate : fallback
+  })
+}
+
+function getInitialSettings(): AppSettings {
   if (typeof window === 'undefined') {
-    return {
-      autoSave: true,
-      checkFontSize: 16,
-      palette: defaultPalette,
-      quickTexts: defaultQuickTexts,
-    }
+    return createDefaultSettings()
   }
 
   try {
     const raw = window.localStorage.getItem(settingsStorageKey)
     if (!raw) {
-      return {
-        autoSave: true,
-        checkFontSize: 16,
-        palette: defaultPalette,
-        quickTexts: defaultQuickTexts,
-      }
+      return createDefaultSettings()
     }
 
-    const parsed = JSON.parse(raw) as {
-      autoSave?: boolean
-      checkFontSize?: number
-      palette?: unknown
-      quickTexts?: QuickTextItem[]
-    }
+    const parsed = JSON.parse(raw) as Partial<AppSettings>
     return {
       autoSave: parsed.autoSave ?? true,
       checkFontSize: Math.min(24, Math.max(12, parsed.checkFontSize ?? 16)),
+      groupColors: normalizeGroupColors(parsed.groupColors),
+      labelFontSize: Math.min(maxLabelFontSize, Math.max(minLabelFontSize, parsed.labelFontSize ?? defaultLabelFontSize)),
       palette: isPaletteId(parsed.palette) ? parsed.palette : defaultPalette,
       quickTexts: Array.isArray(parsed.quickTexts) && parsed.quickTexts.length > 0
         ? parsed.quickTexts
@@ -147,14 +171,10 @@ function getInitialSettings() {
           }))
           .filter((item) => item.text)
         : defaultQuickTexts,
+      uiScale: clampUiScale(parsed.uiScale ?? 1),
     }
   } catch {
-    return {
-      autoSave: true,
-      checkFontSize: 16,
-      palette: defaultPalette,
-      quickTexts: defaultQuickTexts,
-    }
+    return createDefaultSettings()
   }
 }
 
@@ -164,6 +184,7 @@ function App() {
   const isWindowsPlatform = typeof navigator !== 'undefined' && /win/i.test(navigator.userAgent)
   const [theme, setTheme] = useState<ThemeMode>(getInitialTheme)
   const [settings, setSettings] = useState<AppSettings>(getInitialSettings)
+  const [uiScaleDraft, setUiScaleDraft] = useState(() => Math.round(settings.uiScale * 100))
   const [workspace, setWorkspace] = useState<WorkspaceData | null>(null)
   const [activeFileName, setActiveFileName] = useState<string>('')
   const [activeLabelId, setActiveLabelId] = useState<number | null>(null)
@@ -171,6 +192,7 @@ function App() {
   const [isBusy, setIsBusy] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const [groupColorIndex, setGroupColorIndex] = useState<number | null>(null)
   const [hasUnsavedLocalEdits, setHasUnsavedLocalEdits] = useState(false)
   const [previewZoom, setPreviewZoom] = useState(1)
   const [previewPan, setPreviewPan] = useState({ x: 0, y: 0 })
@@ -203,6 +225,9 @@ function App() {
   const detailOriginRef = useRef<DOMRect | null>(null)
   const detailReturnFocusRef = useRef<HTMLButtonElement | null>(null)
   const detailIsAnimatingRef = useRef(false)
+  const settingsOverlayRef = useRef<HTMLDivElement | null>(null)
+  const settingsPopupRef = useRef<HTMLDivElement | null>(null)
+  const settingsCloseTimerRef = useRef<number | null>(null)
   const workspaceLayoutRef = useRef<HTMLElement | null>(null)
   const panelResizeStateRef = useRef<{ panel: 'file' | 'label'; startX: number; startWidth: number } | null>(null)
   const labelTextUndoCapturedRef = useRef(false)
@@ -247,6 +272,7 @@ function App() {
   const firstUntranslatedLabel = untranslatedLabels[0] ?? null
   const scaledPreviewWidth = imageNaturalSize.width > 0 ? imageNaturalSize.width * previewZoom : 0
   const scaledPreviewHeight = imageNaturalSize.height > 0 ? imageNaturalSize.height * previewZoom : 0
+  const uiScale = settings.uiScale
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
@@ -256,6 +282,10 @@ function App() {
   useEffect(() => {
     document.documentElement.dataset.palette = settings.palette
   }, [settings.palette])
+
+  useEffect(() => {
+    document.documentElement.style.setProperty('--ui-scale', String(settings.uiScale))
+  }, [settings.uiScale])
 
   useEffect(() => {
     if (isDesktop && isWindowsPlatform) {
@@ -657,7 +687,8 @@ function App() {
   }
 
   function getCategoryColor(category: number) {
-    return categoryColors[(Math.max(1, category) - 1) % categoryColors.length]
+    const index = (Math.max(1, category) - 1) % categoryColors.length
+    return settings.groupColors[index] ?? categoryColors[index]
   }
 
   function focusLabelInPreview(label: LabelEntry) {
@@ -667,11 +698,13 @@ function App() {
     }
 
     const frameRect = frame.getBoundingClientRect()
+    const frameWidth = frameRect.width / uiScale
+    const frameHeight = frameRect.height / uiScale
     const scaledWidth = imageNaturalSize.width * previewZoom
     const scaledHeight = imageNaturalSize.height * previewZoom
-    const baseX = (frameRect.width - scaledWidth) / 2
-    const targetX = frameRect.width / 2
-    const targetY = frameRect.height * 0.36
+    const baseX = (frameWidth - scaledWidth) / 2
+    const targetX = frameWidth / 2
+    const targetY = frameHeight * 0.36
 
     setPreviewPan({
       x: targetX - baseX - label.xPercent * scaledWidth,
@@ -934,6 +967,13 @@ function App() {
     setHasUnsavedLocalEdits(true)
   }
 
+  function setGroupColor(index: number, color: string) {
+    setSettings((current) => ({
+      ...current,
+      groupColors: current.groupColors.map((item, itemIndex) => (itemIndex === index ? color : item)),
+    }))
+  }
+
   function addLabelAtPosition(xPercent: number, yPercent: number, textValue = '') {
     if (!workspace || !activeFileName) {
       return
@@ -1073,8 +1113,10 @@ function App() {
     }
 
     const frameRect = frame.getBoundingClientRect()
-    const fitByHeight = frameRect.width >= frameRect.height
-    const nextZoom = fitByHeight ? frameRect.height / height : frameRect.width / width
+    const frameWidth = frameRect.width / uiScale
+    const frameHeight = frameRect.height / uiScale
+    const fitByHeight = frameWidth >= frameHeight
+    const nextZoom = fitByHeight ? frameHeight / height : frameWidth / width
     return clampZoom(nextZoom)
   }
 
@@ -1146,6 +1188,47 @@ function App() {
     applyTheme(theme === 'dark' ? 'light' : 'dark', event)
   }
 
+  const openSettings = useCallback(() => {
+    if (settingsCloseTimerRef.current !== null) {
+      window.clearTimeout(settingsCloseTimerRef.current)
+      settingsCloseTimerRef.current = null
+      settingsOverlayRef.current?.classList.remove('is-closing')
+    }
+    setSettingsDetail(null)
+    setUiScaleDraft(Math.round(settings.uiScale * 100))
+    setIsSettingsOpen(true)
+  }, [settings.uiScale])
+
+  function applyUiScale() {
+    setSettings((current) => ({ ...current, uiScale: clampUiScale(uiScaleDraft / 100) }))
+  }
+
+  const closeSettings = useCallback(() => {
+    setSettingsDetail(null)
+
+    if (settingsCloseTimerRef.current !== null) {
+      return
+    }
+
+    const overlay = settingsOverlayRef.current
+    if (!overlay || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      setIsSettingsOpen(false)
+      return
+    }
+
+    overlay.classList.add('is-closing')
+    settingsCloseTimerRef.current = window.setTimeout(() => {
+      settingsCloseTimerRef.current = null
+      setIsSettingsOpen(false)
+    }, 150)
+  }, [])
+
+  useEffect(() => () => {
+    if (settingsCloseTimerRef.current !== null) {
+      window.clearTimeout(settingsCloseTimerRef.current)
+    }
+  }, [])
+
   const closeSettingsDetail = useCallback(() => {
     if (!settingsDetail || detailIsAnimatingRef.current) {
       return
@@ -1172,8 +1255,8 @@ function App() {
     }
 
     const target = page.getBoundingClientRect()
-    const translateX = origin.left - target.left
-    const translateY = origin.top - target.top
+    const translateX = (origin.left - target.left) / uiScale
+    const translateY = (origin.top - target.top) / uiScale
     const scaleX = origin.width / target.width
     const scaleY = origin.height / target.height
     detailIsAnimatingRef.current = true
@@ -1190,7 +1273,7 @@ function App() {
     animation.finished.then(finish).catch(() => {
       detailIsAnimatingRef.current = false
     })
-  }, [settingsDetail])
+  }, [settingsDetail, uiScale])
 
   useLayoutEffect(() => {
     if (!settingsDetail) {
@@ -1217,8 +1300,8 @@ function App() {
       return () => window.clearTimeout(focusTimer)
     }
 
-    const translateX = origin.left - target.left
-    const translateY = origin.top - target.top
+    const translateX = (origin.left - target.left) / uiScale
+    const translateY = (origin.top - target.top) / uiScale
     const scaleX = origin.width / target.width
     const scaleY = origin.height / target.height
     const initialTransform = `translate(${translateX}px, ${translateY}px) scale(${scaleX}, ${scaleY})`
@@ -1251,7 +1334,7 @@ function App() {
       cancelAnimationFrame(frame)
       animation.cancel()
     }
-  }, [settingsDetail])
+  }, [settingsDetail, uiScale])
 
   useEffect(() => {
     if (!settingsDetail) {
@@ -1274,6 +1357,7 @@ function App() {
 
 
   function openSettingsDetail(kind: SettingsDetail, event: ReactMouseEvent<HTMLButtonElement>) {
+    settingsPopupRef.current?.getAnimations().forEach((animation) => animation.finish())
     const card = event.currentTarget.closest('.settings-section')
     detailOriginRef.current = (card instanceof HTMLElement ? card : event.currentTarget).getBoundingClientRect()
     detailReturnFocusRef.current = event.currentTarget
@@ -1414,8 +1498,8 @@ function App() {
 
     if (session.type === 'pan') {
       setPreviewPan({
-        x: session.basePanX + event.clientX - session.startX,
-        y: session.basePanY + event.clientY - session.startY,
+        x: session.basePanX + (event.clientX - session.startX) / uiScale,
+        y: session.basePanY + (event.clientY - session.startY) / uiScale,
       })
       return
     }
@@ -1466,10 +1550,12 @@ function App() {
 
       requestAnimationFrame(() => {
         const rect = frame.getBoundingClientRect()
-        const fitByHeight = rect.width >= rect.height
+        const frameWidth = rect.width / uiScale
+        const frameHeight = rect.height / uiScale
+        const fitByHeight = frameWidth >= frameHeight
         const nextZoom = fitByHeight
-          ? rect.height / imageNaturalSize.height
-          : rect.width / imageNaturalSize.width
+          ? frameHeight / imageNaturalSize.height
+          : frameWidth / imageNaturalSize.width
 
         setPreviewZoom(clampZoom(nextZoom))
         setPreviewPan({ x: 0, y: 0 })
@@ -1478,7 +1564,7 @@ function App() {
 
     observer.observe(frame)
     return () => observer.disconnect()
-  }, [activeFileImageSrc, imageNaturalSize.height, imageNaturalSize.width])
+  }, [activeFileImageSrc, imageNaturalSize.height, imageNaturalSize.width, uiScale])
 
   useEffect(() => {
     importDroppedFilesRef.current = importDroppedFiles
@@ -1842,23 +1928,25 @@ function App() {
     const layout = workspaceLayoutRef.current
     if (!layout || window.innerWidth < 960) return
     const other = layout.querySelector(panel === 'file' ? '.label-panel' : '.file-panel')
-    const available = layout.clientWidth - (other?.getBoundingClientRect().width ?? 0) - 344
-    const minimum = panel === 'file' ? 180 : 240
+    const otherWidth = (other?.getBoundingClientRect().width ?? 0) / uiScale
+    const available = layout.clientWidth - otherWidth - 344
+    const minimum = 240
     const maximum = Math.min(panel === 'file' ? 420 : 720, available)
     const next = Math.max(minimum, Math.min(maximum, width))
     if (panel === 'file') setFilePanelWidth(next)
     else setLabelPanelWidth(next)
-  }, [])
+  }, [uiScale])
 
   function startPanelResize(event: React.PointerEvent<HTMLDivElement>, panel: 'file' | 'label') {
     if (event.button !== 0) return
     event.preventDefault()
     event.currentTarget.setPointerCapture(event.pointerId)
     const element = workspaceLayoutRef.current?.querySelector(`.${panel}-panel`)
+    const measuredWidth = element?.getBoundingClientRect().width
     panelResizeStateRef.current = {
       panel,
       startX: event.clientX,
-      startWidth: element?.getBoundingClientRect().width ?? (panel === 'file' ? filePanelWidth : labelPanelWidth),
+      startWidth: measuredWidth ? measuredWidth / uiScale : (panel === 'file' ? filePanelWidth : labelPanelWidth),
     }
     document.body.style.cursor = 'col-resize'
     document.body.style.userSelect = 'none'
@@ -1877,8 +1965,10 @@ function App() {
     if (!layout) return
     const observer = new ResizeObserver(() => {
       if (window.innerWidth < 960) return
-      const fileWidth = layout.querySelector('.file-panel')?.getBoundingClientRect().width ?? 260
-      const labelWidth = layout.querySelector('.label-panel')?.getBoundingClientRect().width ?? 360
+      const fileRect = layout.querySelector('.file-panel')?.getBoundingClientRect().width
+      const labelRect = layout.querySelector('.label-panel')?.getBoundingClientRect().width
+      const fileWidth = fileRect ? fileRect / uiScale : 260
+      const labelWidth = labelRect ? labelRect / uiScale : 360
       const available = layout.clientWidth - 344
       if (fileWidth + labelWidth <= available) return
       const nextFile = Math.max(180, Math.min(fileWidth, available - 240))
@@ -1887,7 +1977,7 @@ function App() {
     })
     observer.observe(layout)
     return () => observer.disconnect()
-  }, [])
+  }, [uiScale])
 
   useEffect(() => {
     function handlePointerMove(event: PointerEvent) {
@@ -1896,7 +1986,7 @@ function App() {
         return
       }
 
-      const delta = event.clientX - session.startX
+      const delta = (event.clientX - session.startX) / uiScale
       resizePanel(session.panel, session.startWidth + (session.panel === 'file' ? delta : -delta))
     }
 
@@ -1916,7 +2006,7 @@ function App() {
       window.removeEventListener('pointercancel', handlePointerUp)
       handlePointerUp()
     }
-  }, [resizePanel])
+  }, [resizePanel, uiScale])
 
   return (
     <div className={isDesktop ? 'shell shell-desktop' : 'shell'}>
@@ -1940,8 +2030,11 @@ function App() {
             type="button"
             className={isSettingsOpen ? 'ghost-button settings-button active' : 'ghost-button settings-button'}
             onClick={() => {
-              setSettingsDetail(null)
-              setIsSettingsOpen((current) => !current)
+              if (isSettingsOpen) {
+                closeSettings()
+                return
+              }
+              openSettings()
             }}
             aria-label={text.top.openSettings}
             title={text.top.openSettings}
@@ -1952,13 +2045,12 @@ function App() {
 
         {isSettingsOpen ? (
           <div
+            ref={settingsOverlayRef}
             className={settingsDetail ? 'settings-overlay is-detail-open' : 'settings-overlay'}
-            onClick={() => {
-              setSettingsDetail(null)
-              setIsSettingsOpen(false)
-            }}
+            onClick={closeSettings}
           >
             <div
+              ref={settingsPopupRef}
               className={settingsDetail ? 'settings-popup is-detail-open' : 'settings-popup'}
               onClick={(event) => event.stopPropagation()}
               inert={settingsDetail !== null}
@@ -2060,8 +2152,42 @@ function App() {
               </div>
 
               <div className="settings-section">
+                <div className="settings-row">
+                  <span className="settings-row-label">
+                    <ZoomIn className="settings-section-icon" aria-hidden="true" />
+                    <span>{text.settings.uiScale}</span>
+                  </span>
+                  <div className="settings-range-wrap">
+                    <input
+                      type="range"
+                      min={80}
+                      max={150}
+                      step={5}
+                      value={uiScaleDraft}
+                      onChange={(event) => setUiScaleDraft(Number(event.target.value))}
+                    />
+                    <strong>{uiScaleDraft}%</strong>
+                  </div>
+                </div>
+                <div className="settings-scale-footer">
+                  <span className="settings-inline-hint">{text.settings.uiScaleHint}</span>
+                  <button
+                    type="button"
+                    className="ghost-button settings-scale-apply"
+                    disabled={uiScaleDraft === Math.round(settings.uiScale * 100)}
+                    onClick={applyUiScale}
+                  >
+                    {text.settings.applyUiScale}
+                  </button>
+                </div>
+              </div>
+
+              <div className="settings-section">
                 <label className="settings-row">
-                  <span>{text.settings.autoSave}</span>
+                  <span className="settings-row-label">
+                    <Save className="settings-section-icon" aria-hidden="true" />
+                    <span>{text.settings.autoSave}</span>
+                  </span>
                   <input
                     type="checkbox"
                     checked={settings.autoSave}
@@ -2072,7 +2198,10 @@ function App() {
                 </label>
 
                 <label className="settings-row">
-                  <span>{text.settings.checkFontSize}</span>
+                  <span className="settings-row-label">
+                    <ALargeSmall className="settings-section-icon" aria-hidden="true" />
+                    <span>{text.settings.checkFontSize}</span>
+                  </span>
                   <div className="settings-range-wrap">
                     <input
                       type="range"
@@ -2084,6 +2213,25 @@ function App() {
                       }}
                     />
                     <strong>{settings.checkFontSize}px</strong>
+                  </div>
+                </label>
+
+                <label className="settings-row">
+                  <span className="settings-row-label">
+                    <Type className="settings-section-icon" aria-hidden="true" />
+                    <span>{text.settings.labelFontSize}</span>
+                  </span>
+                  <div className="settings-range-wrap">
+                    <input
+                      type="range"
+                      min={minLabelFontSize}
+                      max={maxLabelFontSize}
+                      value={settings.labelFontSize}
+                      onChange={(event) => {
+                        setSettings((current) => ({ ...current, labelFontSize: Number(event.target.value) }))
+                      }}
+                    />
+                    <strong>{settings.labelFontSize}px</strong>
                   </div>
                 </label>
               </div>
@@ -2360,26 +2508,16 @@ function App() {
           </div>
 
           <div className="workspace-meta">
-            <h4>{text.workspace.groups}</h4>
-            <div className="chips chips-with-actions">
-              {workspace ? (
-                getVisibleGroupNames().map((group, index) => (
-                  <button
-                    key={`${group}-${index}`}
-                    type="button"
-                    className={index + 1 === selectedCategory ? 'chip chip-selectable active' : 'chip chip-selectable'}
-                    style={getCategoryChipStyle(index + 1)}
-                    onClick={() => setSelectedCategory(index + 1)}
-                  >
-                    {group || getResolvedGroupName(index + 1)}
-                    <span className="chip-index">{index + 1}</span>
-                  </button>
-                ))
-              ) : (
-                <span className="chip muted">{text.workspace.noGroups}</span>
-              )}
+            <div className="workspace-meta-head">
+              <h4>{text.workspace.groups}</h4>
               {workspace && getVisibleGroupNames().length < 9 ? (
-                <button type="button" className="chip chip-selectable chip-add" onClick={addGroup}>
+                <button
+                  type="button"
+                  className="chip chip-selectable chip-add"
+                  onClick={addGroup}
+                  aria-label={text.workspace.addGroup}
+                  title={text.workspace.addGroup}
+                >
                   <Plus aria-hidden="true" />
                 </button>
               ) : null}
@@ -2388,34 +2526,71 @@ function App() {
             {workspace ? (
               <div className="group-edit-list">
                 {getVisibleGroupNames().map((group, index) => (
-                  <label key={`group-edit-${index}`} className="group-edit-row">
-                    <span className="group-edit-index" style={getCategoryChipStyle(index + 1)}>{index + 1}</span>
-                    <input
-                      value={group}
-                      onFocus={() => {
-                        if (groupUndoCapturedRef.current !== index) {
-                          pushUndoSnapshot()
-                          groupUndoCapturedRef.current = index
+                  <div key={`group-edit-${index}`} className="group-edit-item">
+                    <div className="group-edit-row">
+                      <button
+                        type="button"
+                        className={
+                          groupColorIndex === index
+                            ? 'group-edit-index group-edit-color-trigger active'
+                            : 'group-edit-index group-edit-color-trigger'
                         }
-                      }}
-                      onBlur={() => {
-                        if (groupUndoCapturedRef.current === index) {
-                          groupUndoCapturedRef.current = null
-                        }
-                      }}
-                      onChange={(event) => updateGroupName(index, event.target.value, { captureHistory: false })}
-                    />
-                    <button
-                      type="button"
-                      className="group-delete-button"
-                      onClick={() => deleteGroup(index)}
-                      disabled={!canDeleteGroup(index)}
-                      aria-label={`删除分组 ${index + 1}`}
-                      title={canDeleteGroup(index) ? `删除分组 ${index + 1}` : '仅空分组可删除，且至少保留一个分组'}
-                    >
-                      <Minus aria-hidden="true" />
-                    </button>
-                  </label>
+                        style={getCategoryChipStyle(index + 1)}
+                        onClick={() => setGroupColorIndex(groupColorIndex === index ? null : index)}
+                        aria-expanded={groupColorIndex === index}
+                        aria-label={`修改分组 ${index + 1} 颜色`}
+                        title="点击修改分组颜色"
+                      >
+                        {index + 1}
+                      </button>
+                      <input
+                        value={group}
+                        onFocus={() => {
+                          if (groupUndoCapturedRef.current !== index) {
+                            pushUndoSnapshot()
+                            groupUndoCapturedRef.current = index
+                          }
+                        }}
+                        onBlur={() => {
+                          if (groupUndoCapturedRef.current === index) {
+                            groupUndoCapturedRef.current = null
+                          }
+                        }}
+                        onChange={(event) => updateGroupName(index, event.target.value, { captureHistory: false })}
+                      />
+                      <button
+                        type="button"
+                        className="group-delete-button"
+                        onClick={() => deleteGroup(index)}
+                        disabled={!canDeleteGroup(index)}
+                        aria-label={`删除分组 ${index + 1}`}
+                        title={canDeleteGroup(index) ? `删除分组 ${index + 1}` : '仅空分组可删除，且至少保留一个分组'}
+                      >
+                        <Minus aria-hidden="true" />
+                      </button>
+                    </div>
+                    {groupColorIndex === index ? (
+                      <div className="group-color-row">
+                        {categoryColors.map((color) => (
+                          <button
+                            key={color}
+                            type="button"
+                            className={
+                              getCategoryColor(index + 1) === color
+                                ? 'group-color-swatch active'
+                                : 'group-color-swatch'
+                            }
+                            style={{ '--swatch-color': color } as CSSProperties}
+                            onClick={() => {
+                              setGroupColor(index, color)
+                              setGroupColorIndex(null)
+                            }}
+                            aria-label={`设为 ${color}`}
+                          />
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
                 ))}
               </div>
             ) : null}
@@ -2609,7 +2784,7 @@ function App() {
                     <div
                       ref={quickTextPanelRef}
                       className="quicktext-panel quicktext-panel-preview"
-                      style={{ left: `${previewQuickTextAnchor.x}px`, top: `${previewQuickTextAnchor.y}px` }}
+                      style={{ left: `${previewQuickTextAnchor.x / uiScale}px`, top: `${previewQuickTextAnchor.y / uiScale}px` }}
                     >
                       {settings.quickTexts.filter((item) => item.text).map((item, index) => (
                         <button
@@ -2658,7 +2833,7 @@ function App() {
 
           {activeFile ? (
             <>
-              <div className="label-list">
+              <div className="label-list" style={{ fontSize: `${settings.labelFontSize}px` }}>
                 {activeFile.labels.map((label) => (
                   <button
                     key={label.id}
@@ -2694,20 +2869,26 @@ function App() {
                       <span className="label-position-pill is-x">X {activeLabel.xPercent.toFixed(3)}</span>
                       <span className="label-position-pill is-y">Y {activeLabel.yPercent.toFixed(3)}</span>
                     </div>
-                    <label className="label-category-select-row">
-                      <span>{text.labels.category}</span>
-                      <select
-                        className="label-category-select"
-                        value={activeLabel.category}
-                        onChange={(event) => updateActiveLabelCategory(Number(event.target.value))}
-                      >
+                    <div className="label-category-block">
+                      <span className="label-category-block-title">{text.labels.category}</span>
+                      <div className="label-category-tags" role="group" aria-label={text.labels.category}>
                         {getVisibleGroupNames().map((group, index) => (
-                          <option key={`${group}-${index + 1}`} value={index + 1}>
-                            {`${group || text.labels.groupFallback(index + 1)}(${index + 1})`}
-                          </option>
+                          <button
+                            key={`${group}-${index + 1}`}
+                            type="button"
+                            className={activeLabel.category === index + 1 ? 'label-category-tag active' : 'label-category-tag'}
+                            style={getCategoryChipStyle(index + 1)}
+                            onClick={() => updateActiveLabelCategory(index + 1)}
+                            aria-pressed={activeLabel.category === index + 1}
+                          >
+                            <span className="label-category-tag-name">
+                              {group || text.labels.groupFallback(index + 1)}
+                            </span>
+                            <span className="label-category-tag-index">{index + 1}</span>
+                          </button>
                         ))}
-                      </select>
-                    </label>
+                      </div>
+                    </div>
                     <div className="label-editor-wrap">
                       <textarea
                         ref={labelEditorRef}
