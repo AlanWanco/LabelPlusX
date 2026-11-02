@@ -22,4 +22,13 @@ export interface WorkspaceData {
 }
 
 export type ThemeMode = 'light' | 'dark'
+
+export type PaletteId =
+  | 'default'
+  | 'catppuccin'
+  | 'nord'
+  | 'gruvbox'
+  | 'rose-pine'
+  | 'tokyo-night'
+  | 'dracula'
 export type ReadingMode = 'horizontal' | 'vertical'

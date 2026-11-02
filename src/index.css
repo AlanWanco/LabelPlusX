@@ -1,25 +1,23 @@
 :root {
   color-scheme: light;
   --bg: #f5f7fb;
-  --panel: rgba(255, 255, 255, 0.78);
-  --surface: rgba(248, 250, 252, 0.92);
+  --panel: #ffffff;
+  --surface: #f8fafc;
   --border: rgba(148, 163, 184, 0.24);
   --text: #334155;
   --text-strong: #0f172a;
-  --text-muted: #64748b;
+  --text-muted: #5d6b7f;
   --accent: #7c3aed;
   --accent-strong: #2563eb;
   --accent-soft: rgba(124, 58, 237, 0.14);
-  --shadow: 0 24px 60px rgba(15, 23, 42, 0.12);
+  --border-strong: rgba(148, 163, 184, 0.4);
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI',
     sans-serif;
   line-height: 1.5;
   font-weight: 400;
   color: var(--text);
-  background:
-    radial-gradient(circle at top, rgba(96, 165, 250, 0.12), transparent 35%),
-    linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
+  background: var(--bg);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -29,8 +27,8 @@
 :root[data-theme='dark'] {
   color-scheme: dark;
   --bg: #09111f;
-  --panel: rgba(15, 23, 42, 0.74);
-  --surface: rgba(15, 23, 42, 0.92);
+  --panel: #0f172a;
+  --surface: #162033;
   --border: rgba(148, 163, 184, 0.16);
   --text: #cbd5e1;
   --text-strong: #f8fafc;
@@ -38,10 +36,217 @@
   --accent: #8b5cf6;
   --accent-strong: #38bdf8;
   --accent-soft: rgba(56, 189, 248, 0.14);
-  --shadow: 0 28px 80px rgba(2, 6, 23, 0.42);
-  background:
-    radial-gradient(circle at top, rgba(56, 189, 248, 0.12), transparent 35%),
-    linear-gradient(180deg, #020617 0%, #0f172a 100%);
+  --border-strong: rgba(148, 163, 184, 0.32);
+  background: var(--bg);
+}
+
+/*
+ * 配色主题：取自 GitHub 上流行的配色项目
+ * Catppuccin / Nord / Gruvbox / Rosé Pine / Tokyo Night / Dracula。
+ * 默认配色与 :root 保持一致；html[data-palette] 决定当前配色，
+ * 设置面板中的色板预览复用同一组变量。
+ */
+[data-palette='default'] {
+  --bg: #f5f7fb;
+  --panel: #ffffff;
+  --surface: #f8fafc;
+  --border: rgba(148, 163, 184, 0.24);
+  --border-strong: rgba(148, 163, 184, 0.4);
+  --text: #334155;
+  --text-strong: #0f172a;
+  --text-muted: #5d6b7f;
+  --accent: #7c3aed;
+  --accent-strong: #2563eb;
+  --accent-soft: rgba(124, 58, 237, 0.14);
+}
+
+[data-theme='dark'][data-palette='default'],
+[data-theme='dark'] [data-palette='default'] {
+  --bg: #09111f;
+  --panel: #0f172a;
+  --surface: #162033;
+  --border: rgba(148, 163, 184, 0.16);
+  --border-strong: rgba(148, 163, 184, 0.32);
+  --text: #cbd5e1;
+  --text-strong: #f8fafc;
+  --text-muted: #94a3b8;
+  --accent: #8b5cf6;
+  --accent-strong: #38bdf8;
+  --accent-soft: rgba(56, 189, 248, 0.14);
+}
+
+[data-palette='catppuccin'] {
+  --bg: #e6e9ef;
+  --panel: #eff1f5;
+  --surface: #dce0e8;
+  --text: #4c4f69;
+  --text-strong: #363a4f;
+  --text-muted: color-mix(in srgb, var(--text) 86%, var(--bg));
+  --border: color-mix(in srgb, var(--text) 15%, var(--bg));
+  --border-strong: color-mix(in srgb, var(--text) 28%, var(--bg));
+  --accent: #8839ef;
+  --accent-strong: #1e66f5;
+  --accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+[data-theme='dark'][data-palette='catppuccin'],
+[data-theme='dark'] [data-palette='catppuccin'] {
+  --bg: #11111b;
+  --panel: #1e1e2e;
+  --surface: #181825;
+  --text: #bac2de;
+  --text-strong: #cdd6f4;
+  --text-muted: color-mix(in srgb, var(--text) 62%, var(--bg));
+  --border: color-mix(in srgb, var(--text) 15%, var(--bg));
+  --border-strong: color-mix(in srgb, var(--text) 28%, var(--bg));
+  --accent: #cba6f7;
+  --accent-strong: #89b4fa;
+  --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+[data-palette='nord'] {
+  --bg: #e5e9f0;
+  --panel: #eceff4;
+  --surface: #d8dee9;
+  --text: #3b4252;
+  --text-strong: #2e3440;
+  --text-muted: color-mix(in srgb, var(--text) 78%, var(--bg));
+  --border: color-mix(in srgb, var(--text) 15%, var(--bg));
+  --border-strong: color-mix(in srgb, var(--text) 28%, var(--bg));
+  --accent: #5e81ac;
+  --accent-strong: #81a1c1;
+  --accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+[data-theme='dark'][data-palette='nord'],
+[data-theme='dark'] [data-palette='nord'] {
+  --bg: #2e3440;
+  --panel: #3b4252;
+  --surface: #434c5e;
+  --text: #d8dee9;
+  --text-strong: #eceff4;
+  --text-muted: color-mix(in srgb, var(--text) 62%, var(--bg));
+  --border: color-mix(in srgb, var(--text) 15%, var(--bg));
+  --border-strong: color-mix(in srgb, var(--text) 28%, var(--bg));
+  --accent: #88c0d0;
+  --accent-strong: #81a1c1;
+  --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+[data-palette='gruvbox'] {
+  --bg: #fbf1c7;
+  --panel: #f9f5d7;
+  --surface: #ebdbb2;
+  --text: #3c3836;
+  --text-strong: #282828;
+  --text-muted: color-mix(in srgb, var(--text) 72%, var(--bg));
+  --border: color-mix(in srgb, var(--text) 15%, var(--bg));
+  --border-strong: color-mix(in srgb, var(--text) 28%, var(--bg));
+  --accent: #af3a03;
+  --accent-strong: #076678;
+  --accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+[data-theme='dark'][data-palette='gruvbox'],
+[data-theme='dark'] [data-palette='gruvbox'] {
+  --bg: #1d2021;
+  --panel: #282828;
+  --surface: #32302f;
+  --text: #ebdbb2;
+  --text-strong: #fbf1c7;
+  --text-muted: color-mix(in srgb, var(--text) 56%, var(--bg));
+  --border: color-mix(in srgb, var(--text) 15%, var(--bg));
+  --border-strong: color-mix(in srgb, var(--text) 28%, var(--bg));
+  --accent: #fe8019;
+  --accent-strong: #83a598;
+  --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+[data-palette='rose-pine'] {
+  --bg: #faf4ed;
+  --panel: #fffaf3;
+  --surface: #f2e9e1;
+  --text: #575279;
+  --text-strong: #464261;
+  --text-muted: color-mix(in srgb, var(--text) 84%, var(--bg));
+  --border: color-mix(in srgb, var(--text) 15%, var(--bg));
+  --border-strong: color-mix(in srgb, var(--text) 28%, var(--bg));
+  --accent: #907aa9;
+  --accent-strong: #286983;
+  --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+[data-theme='dark'][data-palette='rose-pine'],
+[data-theme='dark'] [data-palette='rose-pine'] {
+  --bg: #232136;
+  --panel: #2a273f;
+  --surface: #393552;
+  --text: #e0def4;
+  --text-strong: #e0def4;
+  --text-muted: color-mix(in srgb, var(--text) 56%, var(--bg));
+  --border: color-mix(in srgb, var(--text) 15%, var(--bg));
+  --border-strong: color-mix(in srgb, var(--text) 28%, var(--bg));
+  --accent: #c4a7e7;
+  --accent-strong: #9ccfd8;
+  --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+[data-palette='tokyo-night'] {
+  --bg: #d0d5e3;
+  --panel: #e1e2e7;
+  --surface: #c4c8da;
+  --text: #26468c;
+  --text-strong: #2e3a63;
+  --text-muted: color-mix(in srgb, var(--text) 86%, var(--bg));
+  --border: color-mix(in srgb, var(--text) 15%, var(--bg));
+  --border-strong: color-mix(in srgb, var(--text) 28%, var(--bg));
+  --accent: #2470d8;
+  --accent-strong: #9854f1;
+  --accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+[data-theme='dark'][data-palette='tokyo-night'],
+[data-theme='dark'] [data-palette='tokyo-night'] {
+  --bg: #16161e;
+  --panel: #1a1b26;
+  --surface: #292e42;
+  --text: #a9b1d6;
+  --text-strong: #c0caf5;
+  --text-muted: color-mix(in srgb, var(--text) 68%, var(--bg));
+  --border: color-mix(in srgb, var(--text) 15%, var(--bg));
+  --border-strong: color-mix(in srgb, var(--text) 28%, var(--bg));
+  --accent: #7aa2f7;
+  --accent-strong: #bb9af7;
+  --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+[data-palette='dracula'] {
+  --bg: #fffbeb;
+  --panel: #fffdf6;
+  --surface: #f2ecdb;
+  --text: #1f1f1f;
+  --text-strong: #1f1f1f;
+  --text-muted: color-mix(in srgb, var(--text) 62%, var(--bg));
+  --border: color-mix(in srgb, var(--text) 14%, var(--bg));
+  --border-strong: color-mix(in srgb, var(--text) 26%, var(--bg));
+  --accent: #644ac9;
+  --accent-strong: #036a96;
+  --accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+[data-theme='dark'][data-palette='dracula'],
+[data-theme='dark'] [data-palette='dracula'] {
+  --bg: #21222c;
+  --panel: #282a36;
+  --surface: #343746;
+  --text: #f8f8f2;
+  --text-strong: #f8f8f2;
+  --text-muted: color-mix(in srgb, var(--text) 50%, var(--bg));
+  --border: color-mix(in srgb, var(--text) 15%, var(--bg));
+  --border-strong: color-mix(in srgb, var(--text) 28%, var(--bg));
+  --accent: #bd93f9;
+  --accent-strong: #8be9fd;
+  --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
 }
 
 :root[data-platform='windows-tauri'] {
@@ -50,6 +255,41 @@
 
 * {
   box-sizing: border-box;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-muted) 38%, transparent);
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--text-muted) 62%, transparent);
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+@supports (-moz-appearance: none) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--text-muted) 38%, transparent) transparent;
+  }
 }
 
 html,
@@ -97,4 +337,62 @@ h2 {
 
 a {
   color: inherit;
+}
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+input,
+textarea {
+  caret-color: var(--accent);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-muted);
+  opacity: 1;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 32%, transparent);
+  color: var(--text-strong);
+}
+
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+::view-transition-old(root) {
+  z-index: 1;
+}
+
+::view-transition-new(root) {
+  z-index: 2;
+  animation: theme-circle-reveal 460ms cubic-bezier(0.33, 0, 0.2, 1) both;
+}
+
+@keyframes theme-circle-reveal {
+  from {
+    clip-path: circle(0 at var(--theme-reveal-x, 50vw) var(--theme-reveal-y, 50vh));
+  }
+
+  to {
+    clip-path: circle(var(--theme-reveal-radius, 150vmax) at var(--theme-reveal-x, 50vw) var(--theme-reveal-y, 50vh));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+  }
 }

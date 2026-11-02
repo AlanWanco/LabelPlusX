@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import type { ChangeEvent, CSSProperties } from 'react'
-import { ChevronDown, CircleHelp, Minus, Moon, Plus, Settings, SunMedium } from 'lucide-react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
+import type { ChangeEvent, CSSProperties, MouseEvent as ReactMouseEvent } from 'react'
+import { ArrowLeft, ChevronRight, CircleHelp, Download, FolderOpen, Image as ImageIcon, Keyboard, Maximize2, Minus, Moon, Palette, Plus, Save, Settings, SunMedium, TextCursorInput, Trash2 } from 'lucide-react'
 import './App.css'
 import packageJson from '../package.json'
 import {
@@ -22,11 +23,14 @@ import {
   serializeLabelPlusText,
 } from './lib/labelplus'
 import { text } from './lib/i18n'
-import type { LabelEntry, ReadingMode, ThemeMode, WorkspaceData } from './types'
+import { defaultPalette, isPaletteId, paletteOptions } from './lib/palettes'
+import type { LabelEntry, PaletteId, ReadingMode, ThemeMode, WorkspaceData } from './types'
 
 const themeStorageKey = 'labelplusx-theme'
 const readingModeStorageKey = 'labelplusx-reading-mode'
 const settingsStorageKey = 'labelplusx-settings'
+type SettingsDetail = 'quickText' | 'shortcuts'
+
 const exportFileName = 'labelplus-export.txt'
 const minPreviewZoom = 0.1
 const maxPreviewZoom = 8
@@ -38,6 +42,10 @@ const defaultGroupNames = ['框内', '框外']
 
 function getNowTimestamp() {
   return Date.now()
+}
+
+function renderShortcutText(value: string) {
+  return value.split('`').map((part, index) => (index % 2 === 1 ? <code key={index}>{part}</code> : part))
 }
 
 const defaultQuickTexts = [
@@ -63,6 +71,7 @@ interface QuickTextItem {
 interface AppSettings {
   autoSave: boolean
   checkFontSize: number
+  palette: PaletteId
   quickTexts: QuickTextItem[]
 }
 
@@ -104,6 +113,7 @@ function getInitialSettings() {
     return {
       autoSave: true,
       checkFontSize: 16,
+      palette: defaultPalette,
       quickTexts: defaultQuickTexts,
     }
   }
@@ -114,14 +124,21 @@ function getInitialSettings() {
       return {
         autoSave: true,
         checkFontSize: 16,
+        palette: defaultPalette,
         quickTexts: defaultQuickTexts,
       }
     }
 
-    const parsed = JSON.parse(raw) as { autoSave?: boolean; checkFontSize?: number; quickTexts?: QuickTextItem[] }
+    const parsed = JSON.parse(raw) as {
+      autoSave?: boolean
+      checkFontSize?: number
+      palette?: unknown
+      quickTexts?: QuickTextItem[]
+    }
     return {
       autoSave: parsed.autoSave ?? true,
       checkFontSize: Math.min(24, Math.max(12, parsed.checkFontSize ?? 16)),
+      palette: isPaletteId(parsed.palette) ? parsed.palette : defaultPalette,
       quickTexts: Array.isArray(parsed.quickTexts) && parsed.quickTexts.length > 0
         ? parsed.quickTexts
           .map((item) => ({
@@ -135,6 +152,7 @@ function getInitialSettings() {
     return {
       autoSave: true,
       checkFontSize: 16,
+      palette: defaultPalette,
       quickTexts: defaultQuickTexts,
     }
   }
@@ -152,7 +170,6 @@ function App() {
   const [status, setStatus] = useState<string>(text.status.waitingWorkspace)
   const [isBusy, setIsBusy] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
-  const [isTopbarCollapsed, setIsTopbarCollapsed] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [hasUnsavedLocalEdits, setHasUnsavedLocalEdits] = useState(false)
   const [previewZoom, setPreviewZoom] = useState(1)
@@ -162,11 +179,11 @@ function App() {
   const [imageNaturalSize, setImageNaturalSize] = useState({ width: 0, height: 0 })
   const [selectedCategory, setSelectedCategory] = useState(1)
   const [labelPanelWidth, setLabelPanelWidth] = useState(360)
+  const [filePanelWidth, setFilePanelWidth] = useState(260)
   const [arePreviewLabelsHidden, setArePreviewLabelsHidden] = useState(false)
   const [isQuickTextOpen, setIsQuickTextOpen] = useState(false)
   const [quickTextMode, setQuickTextMode] = useState<'editor' | 'preview' | null>(null)
-  const [isQuickTextSettingsOpen, setIsQuickTextSettingsOpen] = useState(false)
-  const [isShortcutListOpen, setIsShortcutListOpen] = useState(false)
+  const [settingsDetail, setSettingsDetail] = useState<SettingsDetail | null>(null)
   const [previewQuickTextAnchor, setPreviewQuickTextAnchor] = useState<{ x: number; y: number; xPercent: number; yPercent: number } | null>(null)
   const [desktopImageSrcMap, setDesktopImageSrcMap] = useState<Record<string, string>>({})
   const objectUrlsRef = useRef<string[]>([])
@@ -179,9 +196,15 @@ function App() {
   const fileListRef = useRef<HTMLDivElement | null>(null)
   const newWorkspaceImageInputRef = useRef<HTMLInputElement | null>(null)
   const labelFileInputRef = useRef<HTMLInputElement | null>(null)
-  const labelEditorRef = useRef<HTMLTextAreaElement | null>(null)
   const quickTextPanelRef = useRef<HTMLDivElement | null>(null)
-  const labelPanelResizeStateRef = useRef<{ startX: number; startWidth: number } | null>(null)
+  const detailPageRef = useRef<HTMLDivElement | null>(null)
+  const labelEditorRef = useRef<HTMLTextAreaElement | null>(null)
+  const detailBackButtonRef = useRef<HTMLButtonElement | null>(null)
+  const detailOriginRef = useRef<DOMRect | null>(null)
+  const detailReturnFocusRef = useRef<HTMLButtonElement | null>(null)
+  const detailIsAnimatingRef = useRef(false)
+  const workspaceLayoutRef = useRef<HTMLElement | null>(null)
+  const panelResizeStateRef = useRef<{ panel: 'file' | 'label'; startX: number; startWidth: number } | null>(null)
   const labelTextUndoCapturedRef = useRef(false)
   const labelTextUndoLastCaptureAtRef = useRef(0)
   const labelTextUndoLastValueRef = useRef('')
@@ -229,6 +252,10 @@ function App() {
     document.documentElement.dataset.theme = theme
     window.localStorage.setItem(themeStorageKey, theme)
   }, [theme])
+
+  useEffect(() => {
+    document.documentElement.dataset.palette = settings.palette
+  }, [settings.palette])
 
   useEffect(() => {
     if (isDesktop && isWindowsPlatform) {
@@ -678,10 +705,6 @@ function App() {
     return workspace.groups.length > 0 ? workspace.groups : defaultGroupNames
   }
 
-  function getGroupDisplayName(index: number) {
-    return `${getResolvedGroupName(index)}(${index})`
-  }
-
   function getFileImageSrc(file: { name: string; imageSrc?: string }) {
     return file.imageSrc ?? desktopImageSrcMap[file.name]
   }
@@ -1079,6 +1102,184 @@ function App() {
   function toggleReadingMode() {
     setReadingMode((current) => (current === 'vertical' ? 'horizontal' : 'vertical'))
   }
+
+  function runCircularReveal(origin: HTMLElement, update: () => void, point?: { x: number; y: number }) {
+    const viewTransitionDocument = document as Document & {
+      startViewTransition?: (callback: () => void) => { finished: Promise<void> }
+    }
+
+    if (!viewTransitionDocument.startViewTransition || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      update()
+      return
+    }
+
+    const rect = origin.getBoundingClientRect()
+    const hasPoint = point !== undefined && (point.x !== 0 || point.y !== 0)
+    const x = hasPoint ? point.x : rect.left + rect.width / 2
+    const y = hasPoint ? point.y : rect.top + rect.height / 2
+    const radius = Math.hypot(Math.max(x, window.innerWidth - x), Math.max(y, window.innerHeight - y))
+    document.documentElement.style.setProperty('--theme-reveal-x', `${x}px`)
+    document.documentElement.style.setProperty('--theme-reveal-y', `${y}px`)
+    document.documentElement.style.setProperty('--theme-reveal-radius', `${radius}px`)
+
+    viewTransitionDocument.startViewTransition(() => {
+      flushSync(update)
+    })
+  }
+
+  function applyTheme(nextTheme: ThemeMode, event: ReactMouseEvent<HTMLButtonElement>) {
+    if (theme === nextTheme) {
+      return
+    }
+
+    runCircularReveal(
+      event.currentTarget,
+      () => {
+        document.documentElement.dataset.theme = nextTheme
+        setTheme(nextTheme)
+      },
+      { x: event.clientX, y: event.clientY },
+    )
+  }
+
+  function handleThemeToggle(event: ReactMouseEvent<HTMLButtonElement>) {
+    applyTheme(theme === 'dark' ? 'light' : 'dark', event)
+  }
+
+  const closeSettingsDetail = useCallback(() => {
+    if (!settingsDetail || detailIsAnimatingRef.current) {
+      return
+    }
+
+    const page = detailPageRef.current
+    const origin = detailOriginRef.current
+    const finish = () => {
+      detailIsAnimatingRef.current = false
+      setSettingsDetail(null)
+      requestAnimationFrame(() => detailReturnFocusRef.current?.focus())
+    }
+
+    if (!page || !origin) {
+      finish()
+      return
+    }
+
+    page.classList.remove('is-open')
+
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      finish()
+      return
+    }
+
+    const target = page.getBoundingClientRect()
+    const translateX = origin.left - target.left
+    const translateY = origin.top - target.top
+    const scaleX = origin.width / target.width
+    const scaleY = origin.height / target.height
+    detailIsAnimatingRef.current = true
+    const animation = page.animate(
+      [
+        { transform: 'translate(0, 0) scale(1, 1)', borderRadius: '18px' },
+        {
+          transform: `translate(${translateX}px, ${translateY}px) scale(${scaleX}, ${scaleY})`,
+          borderRadius: '12px',
+        },
+      ],
+      { duration: 320, easing: 'cubic-bezier(0.4, 0, 0.2, 1)', fill: 'both' },
+    )
+    animation.finished.then(finish).catch(() => {
+      detailIsAnimatingRef.current = false
+    })
+  }, [settingsDetail])
+
+  useLayoutEffect(() => {
+    if (!settingsDetail) {
+      return
+    }
+
+    const page = detailPageRef.current
+    const origin = detailOriginRef.current
+    if (!page || !origin) {
+      return
+    }
+
+    const focusTimer = window.setTimeout(() => detailBackButtonRef.current?.focus(), 90)
+
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      page.classList.add('is-open')
+      detailIsAnimatingRef.current = false
+      return () => window.clearTimeout(focusTimer)
+    }
+
+    const target = page.getBoundingClientRect()
+    if (!target.width || !target.height) {
+      page.classList.add('is-open')
+      return () => window.clearTimeout(focusTimer)
+    }
+
+    const translateX = origin.left - target.left
+    const translateY = origin.top - target.top
+    const scaleX = origin.width / target.width
+    const scaleY = origin.height / target.height
+    const initialTransform = `translate(${translateX}px, ${translateY}px) scale(${scaleX}, ${scaleY})`
+    page.style.transform = initialTransform
+    page.style.borderRadius = '12px'
+    detailIsAnimatingRef.current = true
+    const animation = page.animate(
+      [
+        { transform: initialTransform, borderRadius: '12px' },
+        { transform: 'translate(0, 0) scale(1, 1)', borderRadius: '18px' },
+      ],
+      { duration: 420, easing: 'cubic-bezier(0.22, 1, 0.36, 1)', fill: 'both' },
+    )
+    const frame = requestAnimationFrame(() => page.classList.add('is-open'))
+    animation.finished
+      .then(() => {
+        if (page.isConnected) {
+          page.style.transform = ''
+          page.style.borderRadius = ''
+          animation.cancel()
+        }
+        detailIsAnimatingRef.current = false
+      })
+      .catch(() => {
+        detailIsAnimatingRef.current = false
+      })
+
+    return () => {
+      window.clearTimeout(focusTimer)
+      cancelAnimationFrame(frame)
+      animation.cancel()
+    }
+  }, [settingsDetail])
+
+  useEffect(() => {
+    if (!settingsDetail) {
+      return
+    }
+
+    function handleDetailKeyDown(event: KeyboardEvent) {
+      if (event.key !== 'Escape') {
+        return
+      }
+
+      event.preventDefault()
+      event.stopPropagation()
+      closeSettingsDetail()
+    }
+
+    window.addEventListener('keydown', handleDetailKeyDown, true)
+    return () => window.removeEventListener('keydown', handleDetailKeyDown, true)
+  }, [settingsDetail, closeSettingsDetail])
+
+
+  function openSettingsDetail(kind: SettingsDetail, event: ReactMouseEvent<HTMLButtonElement>) {
+    const card = event.currentTarget.closest('.settings-section')
+    detailOriginRef.current = (card instanceof HTMLElement ? card : event.currentTarget).getBoundingClientRect()
+    detailReturnFocusRef.current = event.currentTarget
+    setSettingsDetail(kind)
+  }
+
 
   function updateLabelPosition(labelId: number, xPercent: number, yPercent: number) {
     if (!workspace || !activeFileName) {
@@ -1637,50 +1838,94 @@ function App() {
     }
   }, [desktopImageSrcMap, workspace, activeFileName])
 
+  const resizePanel = useCallback((panel: 'file' | 'label', width: number) => {
+    const layout = workspaceLayoutRef.current
+    if (!layout || window.innerWidth < 960) return
+    const other = layout.querySelector(panel === 'file' ? '.label-panel' : '.file-panel')
+    const available = layout.clientWidth - (other?.getBoundingClientRect().width ?? 0) - 344
+    const minimum = panel === 'file' ? 180 : 240
+    const maximum = Math.min(panel === 'file' ? 420 : 720, available)
+    const next = Math.max(minimum, Math.min(maximum, width))
+    if (panel === 'file') setFilePanelWidth(next)
+    else setLabelPanelWidth(next)
+  }, [])
+
+  function startPanelResize(event: React.PointerEvent<HTMLDivElement>, panel: 'file' | 'label') {
+    if (event.button !== 0) return
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    const element = workspaceLayoutRef.current?.querySelector(`.${panel}-panel`)
+    panelResizeStateRef.current = {
+      panel,
+      startX: event.clientX,
+      startWidth: element?.getBoundingClientRect().width ?? (panel === 'file' ? filePanelWidth : labelPanelWidth),
+    }
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+  }
+
+  function handlePanelResizeKey(event: React.KeyboardEvent<HTMLDivElement>, panel: 'file' | 'label') {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+    event.preventDefault()
+    event.stopPropagation()
+    const direction = event.key === 'ArrowRight' ? 1 : -1
+    resizePanel(panel, (panel === 'file' ? filePanelWidth : labelPanelWidth) + direction * (panel === 'file' ? 24 : -24))
+  }
+
+  useEffect(() => {
+    const layout = workspaceLayoutRef.current
+    if (!layout) return
+    const observer = new ResizeObserver(() => {
+      if (window.innerWidth < 960) return
+      const fileWidth = layout.querySelector('.file-panel')?.getBoundingClientRect().width ?? 260
+      const labelWidth = layout.querySelector('.label-panel')?.getBoundingClientRect().width ?? 360
+      const available = layout.clientWidth - 344
+      if (fileWidth + labelWidth <= available) return
+      const nextFile = Math.max(180, Math.min(fileWidth, available - 240))
+      setFilePanelWidth(nextFile)
+      setLabelPanelWidth(Math.max(240, available - nextFile))
+    })
+    observer.observe(layout)
+    return () => observer.disconnect()
+  }, [])
+
   useEffect(() => {
     function handlePointerMove(event: PointerEvent) {
-      const session = labelPanelResizeStateRef.current
+      const session = panelResizeStateRef.current
       if (!session) {
         return
       }
 
-      const nextWidth = Math.min(560, Math.max(280, session.startWidth - (event.clientX - session.startX)))
-      setLabelPanelWidth(nextWidth)
+      const delta = event.clientX - session.startX
+      resizePanel(session.panel, session.startWidth + (session.panel === 'file' ? delta : -delta))
     }
 
     function handlePointerUp() {
-      labelPanelResizeStateRef.current = null
+      panelResizeStateRef.current = null
       document.body.style.cursor = ''
       document.body.style.userSelect = ''
     }
 
     window.addEventListener('pointermove', handlePointerMove)
     window.addEventListener('pointerup', handlePointerUp)
+    window.addEventListener('pointercancel', handlePointerUp)
 
     return () => {
       window.removeEventListener('pointermove', handlePointerMove)
       window.removeEventListener('pointerup', handlePointerUp)
+      window.removeEventListener('pointercancel', handlePointerUp)
+      handlePointerUp()
     }
-  }, [])
+  }, [resizePanel])
 
   return (
     <div className={isDesktop ? 'shell shell-desktop' : 'shell'}>
-      <section
-        className={
-          isTopbarCollapsed
-            ? isDragging
-              ? 'top-section top-section-collapsed drag-active'
-              : 'top-section top-section-collapsed'
-            : isDragging
-              ? 'top-section drag-active'
-              : 'top-section'
-        }
-      >
+      <section className={isDragging ? 'top-section drag-active' : 'top-section'}>
         <div className="top-section-controls">
           <button
             type="button"
             className="ghost-button theme-toggle-button"
-            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            onClick={handleThemeToggle}
             aria-label={theme === 'dark' ? text.top.switchToLight : text.top.switchToDark}
             title={theme === 'dark' ? text.top.switchToLight : text.top.switchToDark}
           >
@@ -1694,43 +1939,124 @@ function App() {
           <button
             type="button"
             className={isSettingsOpen ? 'ghost-button settings-button active' : 'ghost-button settings-button'}
-            onClick={() => setIsSettingsOpen((current) => !current)}
+            onClick={() => {
+              setSettingsDetail(null)
+              setIsSettingsOpen((current) => !current)
+            }}
             aria-label={text.top.openSettings}
             title={text.top.openSettings}
           >
             <Settings className="settings-icon" aria-hidden="true" />
           </button>
-
-          <button
-            type="button"
-            className={isTopbarCollapsed ? 'top-section-toggle is-collapsed' : 'top-section-toggle'}
-            onClick={() => setIsTopbarCollapsed((current) => !current)}
-            aria-label={isTopbarCollapsed ? text.top.expandTopbar : text.top.collapseTopbar}
-            title={isTopbarCollapsed ? text.top.expandTopbar : text.top.collapseTopbar}
-          >
-            <ChevronDown className="top-section-toggle-icon" aria-hidden="true" />
-          </button>
         </div>
 
         {isSettingsOpen ? (
-          <div className="settings-overlay" onClick={() => setIsSettingsOpen(false)}>
-            <div className="settings-popup" onClick={(event) => event.stopPropagation()}>
+          <div
+            className={settingsDetail ? 'settings-overlay is-detail-open' : 'settings-overlay'}
+            onClick={() => {
+              setSettingsDetail(null)
+              setIsSettingsOpen(false)
+            }}
+          >
+            <div
+              className={settingsDetail ? 'settings-popup is-detail-open' : 'settings-popup'}
+              onClick={(event) => event.stopPropagation()}
+              inert={settingsDetail !== null}
+              aria-hidden={settingsDetail ? true : undefined}
+            >
               <div className="settings-popup-header">
-              <div className="brand-banner settings-brand-banner">
-                <img className="brand-logo" src="/logo.svg" alt="LabelPlusX logo" />
-                <div className="brand-text">
-                  <div className="settings-brand-meta">
-                    <a className="settings-meta-pill" href={projectHomepage} target="_blank" rel="noreferrer">
-                      {text.settings.githubHomepage}
-                    </a>
-                    <span className="settings-meta-pill">v{appVersion}</span>
+                <div className="brand-banner settings-brand-banner">
+                  <img className="brand-logo" src={`${import.meta.env.BASE_URL}logo.svg`} alt="LabelPlusX logo" />
+                  <div className="brand-text">
+                    <div className="settings-title-row">
+                      <h1>LabelPlusX</h1>
+                      <span className="version-badge">v{appVersion}</span>
+                    </div>
+                    <p className="subtitle">{text.top.subtitle}</p>
                   </div>
-                  <p className="eyebrow">LabelPlus Modern Client</p>
-                  <h1>LabelPlusX</h1>
-                  <p className="subtitle">{text.top.subtitle}</p>
+                  <a
+                    className="settings-github-button"
+                    href={projectHomepage}
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-label={text.settings.githubHomepage}
+                    title={text.settings.githubHomepage}
+                  >
+                    <svg className="github-mark" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                      <path
+                        fill="currentColor"
+                        d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"
+                      />
+                    </svg>
+                    <span>GitHub</span>
+                  </a>
                 </div>
-              </div>
                 <h3>{text.settings.title}</h3>
+              </div>
+
+              <div className="settings-section settings-palette-section">
+                <div className="settings-palette-head">
+                  <span className="settings-palette-title">
+                    <Palette className="settings-section-icon" aria-hidden="true" />
+                    {text.settings.palette}
+                  </span>
+                  <span className="settings-inline-hint">{text.settings.paletteHint}</span>
+                </div>
+                <div className="palette-grid" role="group" aria-label={text.settings.palette}>
+                  {paletteOptions.map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      className="palette-option"
+                      aria-pressed={settings.palette === option.id}
+                      onClick={(event) => {
+                        if (settings.palette === option.id) {
+                          return
+                        }
+
+                        runCircularReveal(
+                          event.currentTarget,
+                          () => {
+                            document.documentElement.dataset.palette = option.id
+                            setSettings((current) => ({ ...current, palette: option.id }))
+                          },
+                          { x: event.clientX, y: event.clientY },
+                        )
+                      }}
+                    >
+                      <span className="palette-swatch" data-palette={option.id} aria-hidden="true">
+                        <span className="palette-dot palette-dot-bg" />
+                        <span className="palette-dot palette-dot-panel" />
+                        <span className="palette-dot palette-dot-accent" />
+                      </span>
+                      <span>{option.name}</span>
+                    </button>
+                  ))}
+                </div>
+                <div className="settings-theme-divider" aria-hidden="true" />
+                <div className="settings-theme-row">
+                  <span className="settings-theme-label">{text.settings.themeMode}</span>
+                  <div className="theme-mode-options" role="group" aria-label={text.settings.themeMode}>
+                    <button
+                      type="button"
+                      className="theme-mode-option"
+                      aria-pressed={theme === 'light'}
+                      onClick={(event) => applyTheme('light', event)}
+                    >
+                      <SunMedium aria-hidden="true" />
+                      <span>{text.settings.themeLight}</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="theme-mode-option"
+                      aria-pressed={theme === 'dark'}
+                      onClick={(event) => applyTheme('dark', event)}
+                    >
+                      <Moon aria-hidden="true" />
+                      <span>{text.settings.themeDark}</span>
+                    </button>
+                  </div>
+                </div>
               </div>
 
               <div className="settings-section">
@@ -1745,7 +2071,7 @@ function App() {
                   />
                 </label>
 
-                <label className="settings-row settings-row-range">
+                <label className="settings-row">
                   <span>{text.settings.checkFontSize}</span>
                   <div className="settings-range-wrap">
                     <input
@@ -1766,217 +2092,241 @@ function App() {
                 <button
                   type="button"
                   className="ghost-button settings-collapse-button"
-                  onClick={() => setIsQuickTextSettingsOpen((current) => !current)}
+                  aria-haspopup="dialog"
+                  aria-expanded={settingsDetail === 'quickText'}
+                  onClick={(event) => openSettingsDetail('quickText', event)}
                 >
-                  <span>{text.settings.quickText}</span>
-                  <span>{isQuickTextSettingsOpen ? '−' : '+'}</span>
+                  <span className="settings-collapse-label">
+                    <TextCursorInput className="settings-section-icon" aria-hidden="true" />
+                    <span>{text.settings.quickText}</span>
+                  </span>
+                  <ChevronRight className="settings-detail-chevron" aria-hidden="true" />
                 </button>
-                {isQuickTextSettingsOpen ? (
-                  <>
-                    <p className="settings-inline-hint">{text.settings.quickTextKeyHint}</p>
-                    <div className="settings-quicktext-list">
-                      {settings.quickTexts.map((item, index) => (
-                        <div key={`${item.key}-${index}`} className="settings-quicktext-row">
-                          <input
-                            type="text"
-                            className="settings-text-input"
-                            value={item.text}
-                            placeholder={text.settings.quickTextText}
-                            onChange={(event) => {
-                              setSettings((current) => ({
-                                ...current,
-                                quickTexts: current.quickTexts.map((entry, entryIndex) =>
-                                  entryIndex === index ? { ...entry, text: event.target.value } : entry,
-                                ),
-                              }))
-                            }}
-                          />
-                          <input
-                            type="text"
-                            className="settings-key-input"
-                            value={item.key}
-                            maxLength={1}
-                            placeholder={text.settings.quickTextKey}
-                            onChange={(event) => {
-                              setSettings((current) => ({
-                                ...current,
-                                quickTexts: current.quickTexts.map((entry, entryIndex) =>
-                                  entryIndex === index ? { ...entry, key: event.target.value.toUpperCase() } : entry,
-                                ),
-                              }))
-                            }}
-                          />
-                        </div>
-                      ))}
-                    </div>
-                    <button
-                      type="button"
-                      className="ghost-button settings-collapse-button"
-                      onClick={() => {
-                        setSettings((current) => ({
-                          ...current,
-                          quickTexts: [...current.quickTexts, { text: '', key: '' }],
-                        }))
-                      }}
-                    >
-                      {text.settings.addQuickText}
-                    </button>
-                  </>
-                ) : null}
               </div>
 
               <div className="settings-section settings-shortcut-section">
                 <button
                   type="button"
                   className="ghost-button settings-collapse-button"
-                  onClick={() => setIsShortcutListOpen((current) => !current)}
+                  aria-haspopup="dialog"
+                  aria-expanded={settingsDetail === 'shortcuts'}
+                  onClick={(event) => openSettingsDetail('shortcuts', event)}
                 >
-                  <span>{text.settings.shortcutOverview}</span>
-                  <span>{isShortcutListOpen ? '−' : '+'}</span>
+                  <span className="settings-collapse-label">
+                    <Keyboard className="settings-section-icon" aria-hidden="true" />
+                    <span>{text.settings.shortcutOverview}</span>
+                  </span>
+                  <ChevronRight className="settings-detail-chevron" aria-hidden="true" />
                 </button>
-                {isShortcutListOpen ? (
-                  <div className="settings-shortcut-list">
-                    <p>{text.preview.shortcutCategory}</p>
-                    <p>{text.preview.shortcutDelete}</p>
-                    <p>{text.preview.shortcutUndoRedo}</p>
-                    <p>{text.preview.shortcutFile}</p>
-                    <p>{text.preview.shortcutAdvance}</p>
-                    <p>{text.preview.shortcutQuickText}</p>
-                    <p>{text.preview.shortcutHide}</p>
-                    <p>{text.preview.shortcutFit}</p>
-                    <p>{text.preview.shortcutCheck}</p>
-                    <p>{text.preview.shortcutReading}</p>
-                    <p>{text.preview.shortcutFocusEditor}</p>
-                  </div>
-                ) : null}
               </div>
             </div>
+
+            {settingsDetail ? (
+              <div
+                className="settings-detail-layer"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  closeSettingsDetail()
+                }}
+              >
+                <div className="settings-detail-frame">
+                  <div
+                    ref={detailPageRef}
+                    className="settings-detail-page"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="settings-detail-title"
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    <div className="settings-detail-header">
+                      <button
+                        ref={detailBackButtonRef}
+                        type="button"
+                        className="settings-detail-back"
+                        onClick={closeSettingsDetail}
+                        aria-label={text.settings.backToSettings}
+                        title={text.settings.backToSettings}
+                      >
+                        <ArrowLeft aria-hidden="true" />
+                      </button>
+                      <span className="settings-detail-heading">
+                        {settingsDetail === 'quickText' ? (
+                          <TextCursorInput aria-hidden="true" />
+                        ) : (
+                          <Keyboard aria-hidden="true" />
+                        )}
+                        <strong id="settings-detail-title">
+                          {settingsDetail === 'quickText'
+                            ? text.settings.quickText
+                            : text.settings.shortcutOverview}
+                        </strong>
+                      </span>
+                    </div>
+
+                    <div className="settings-detail-body">
+                      {settingsDetail === 'quickText' ? (
+                        <>
+                          <p className="settings-detail-hint">{text.settings.quickTextKeyHint}</p>
+                          <div className="settings-quicktext-list">
+                            {settings.quickTexts.map((item, index) => (
+                              <div key={`${item.key}-${index}`} className="settings-quicktext-row">
+                                <input
+                                  type="text"
+                                  className="settings-text-input"
+                                  value={item.text}
+                                  placeholder={text.settings.quickTextText}
+                                  onChange={(event) => {
+                                    setSettings((current) => ({
+                                      ...current,
+                                      quickTexts: current.quickTexts.map((entry, entryIndex) =>
+                                        entryIndex === index ? { ...entry, text: event.target.value } : entry,
+                                      ),
+                                    }))
+                                  }}
+                                />
+                                <input
+                                  type="text"
+                                  className="settings-key-input"
+                                  value={item.key}
+                                  maxLength={1}
+                                  placeholder={text.settings.quickTextKey}
+                                  onChange={(event) => {
+                                    setSettings((current) => ({
+                                      ...current,
+                                      quickTexts: current.quickTexts.map((entry, entryIndex) =>
+                                        entryIndex === index
+                                          ? { ...entry, key: event.target.value.toUpperCase() }
+                                          : entry,
+                                      ),
+                                    }))
+                                  }}
+                                />
+                                <button
+                                  type="button"
+                                  className="settings-quicktext-delete"
+                                  aria-label={text.settings.deleteQuickText}
+                                  title={text.settings.deleteQuickText}
+                                  onClick={() => {
+                                    setSettings((current) => ({
+                                      ...current,
+                                      quickTexts: current.quickTexts.filter((_, entryIndex) => entryIndex !== index),
+                                    }))
+                                  }}
+                                >
+                                  <Trash2 aria-hidden="true" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                          <button
+                            type="button"
+                            className="ghost-button settings-detail-add"
+                            onClick={() => {
+                              setSettings((current) => ({
+                                ...current,
+                                quickTexts: [...current.quickTexts, { text: '', key: '' }],
+                              }))
+                            }}
+                          >
+                            <Plus aria-hidden="true" />
+                            {text.settings.addQuickText}
+                          </button>
+                        </>
+                      ) : (
+                        <div className="settings-shortcut-list settings-shortcut-list-detail">
+                          {[
+                            text.preview.shortcutCategory,
+                            text.preview.shortcutDelete,
+                            text.preview.shortcutUndoRedo,
+                            text.preview.shortcutFile,
+                            text.preview.shortcutAdvance,
+                            text.preview.shortcutQuickText,
+                            text.preview.shortcutHide,
+                            text.preview.shortcutFit,
+                            text.preview.shortcutCheck,
+                            text.preview.shortcutReading,
+                            text.preview.shortcutFocusEditor,
+                          ].map((shortcut) => (
+                            <p key={shortcut}>{renderShortcutText(shortcut)}</p>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </div>
         ) : null}
 
-        <div className="top-section-collapsed-bar" aria-hidden={!isTopbarCollapsed}>
-          <span className="top-section-collapsed-badge">
-            <span className="top-section-collapsed-dot" aria-hidden="true" />
-            <span className="top-section-collapsed-title">LabelPlusX</span>
-          </span>
-        </div>
-
         <div className="top-section-body">
-          <div className="topbar">
-            <div className="brand-banner">
-              <img className="brand-logo" src="/logo.svg" alt="LabelPlusX logo" />
-              <div className="brand-text">
-                <p className="eyebrow">LabelPlus Modern Client</p>
-                <h1>LabelPlusX</h1>
-                <p className="subtitle">{text.top.subtitle}</p>
-              </div>
-            </div>
+          <div className="toolbar-brand">
+            <img className="brand-logo" src={`${import.meta.env.BASE_URL}logo.svg`} alt="" />
+            <h1>LabelPlusX</h1>
           </div>
-
-          <div className="create-panel">
-            <div className="create-dropzone">
-              <div className="import-hub-copy">
-                <div className="import-hub-topline">
-                  <span className="hero-pill">{text.import.createTitle}</span>
-                </div>
-              </div>
-
-              <div className="action-entry">
-                <div className="action-button-wrap">
-                  <button type="button" className="secondary-card action-button" onClick={() => void handleCreateWorkspace()} disabled={isBusy}>
-                    <span className="action-button-title">{text.import.createWorkspace}</span>
-                    <span className="file-picker-cta">{isDesktop ? text.import.chooseFolder : text.import.chooseImages}</span>
-                  </button>
-                  <div className="action-button-tooltip" role="tooltip">
-                    {isDesktop ? text.import.createWorkspaceDesktopHint : text.import.createWorkspaceWebHint}
-                  </div>
-                </div>
-              </div>
-
-              <input
-                ref={newWorkspaceImageInputRef}
-                className="hidden-file-input"
-                type="file"
-                accept="image/*"
-                multiple
-                onChange={handleNewWorkspaceImageFilesChange}
-              />
-            </div>
-          </div>
-
-          <div className="import-panel">
-            <div
-              className={isDragging ? 'import-dropzone drag-active' : 'import-dropzone'}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
+          <div
+            className="workspace-toolbar"
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
+            <button
+              type="button"
+              className="toolbar-button"
+              onClick={() => void handleCreateWorkspace()}
+              disabled={isBusy}
+              title={isDesktop ? text.import.createWorkspaceDesktopHint : text.import.createWorkspaceWebHint}
             >
-              <div className="import-hub-copy">
-                <div className="import-hub-topline">
-                  <span className="hero-pill">{text.import.title}</span>
-                </div>
-                {hasUnsavedLocalEdits ? (
-                  <p className="storage-hint">
-                    {settings.autoSave
-                      ? isDesktop
-                        ? text.import.autoSaveDesktopHint
-                        : text.import.autoSaveWebHint
-                      : text.import.unsavedHint}
-                  </p>
-                ) : null}
-              </div>
-
-              <div className={isDesktop ? 'action-grid action-grid--wide action-grid--single' : 'action-grid action-grid--wide'}>
-                <div className="action-entry">
-                  <div className="action-button-wrap">
-                    <button
-                      type="button"
-                      className="primary-button action-button"
-                      onClick={() => void handleImportLabelText()}
-                      disabled={isBusy}
-                    >
-                      <span className="action-button-title">{isBusy ? text.import.loading : text.import.importText}</span>
-                      <span className="file-picker-cta">{text.import.chooseTxt}</span>
-                    </button>
-                    <div className="action-button-tooltip" role="tooltip">
-                      {isDesktop ? text.import.importTextDesktopSubHint : text.import.importTextWebSubHint}
-                    </div>
-                  </div>
-                </div>
-
-                <input
-                  ref={labelFileInputRef}
-                  className="hidden-file-input"
-                  type="file"
-                  accept=".txt,text/plain"
-                  onChange={handleLabelFileChange}
-                />
-
-                {!isDesktop ? (
-                  <div className="action-entry">
-                    <div className="action-button-wrap">
-                      <label className="secondary-card action-button">
-                        <span className="action-button-title">{text.import.linkImages}</span>
-                        <span className="file-picker-cta">{text.import.chooseImages}</span>
-                        <input type="file" accept="image/*" multiple onChange={handleImageFilesChange} />
-                      </label>
-                      <div className="action-button-tooltip" role="tooltip">
-                        {text.import.linkImagesHint}
-                      </div>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            </div>
+              <Plus aria-hidden="true" />
+              {text.import.createTitle}
+            </button>
+            <button
+              type="button"
+              className="toolbar-button"
+              onClick={() => void handleImportLabelText()}
+              disabled={isBusy}
+              title={isDesktop ? text.import.importTextDesktopSubHint : text.import.importTextWebSubHint}
+            >
+              <FolderOpen aria-hidden="true" />
+              {isBusy ? text.import.loading : text.import.title}
+            </button>
+            {!isDesktop ? (
+              <label className="toolbar-button" title={text.import.linkImagesHint}>
+                <ImageIcon aria-hidden="true" />
+                {text.import.linkImages}
+                <input className="hidden-file-input" type="file" accept="image/*" multiple onChange={handleImageFilesChange} disabled={isBusy} />
+              </label>
+            ) : null}
+            <input
+              ref={newWorkspaceImageInputRef}
+              className="hidden-file-input"
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={handleNewWorkspaceImageFilesChange}
+            />
+            <input
+              ref={labelFileInputRef}
+              className="hidden-file-input"
+              type="file"
+              accept=".txt,text/plain"
+              onChange={handleLabelFileChange}
+            />
           </div>
+          {hasUnsavedLocalEdits ? (
+            <p className="storage-hint" role="status">
+              {settings.autoSave
+                ? isDesktop ? text.import.autoSaveDesktopHint : text.import.autoSaveWebHint
+                : text.import.unsavedHint}
+            </p>
+          ) : null}
         </div>
       </section>
 
-      <main className="workspace-layout" style={{ '--label-panel-width': `${labelPanelWidth}px` } as CSSProperties}>
+      <main ref={workspaceLayoutRef} className="workspace-layout" style={{ '--file-panel-width': `${filePanelWidth}px`, '--label-panel-width': `${labelPanelWidth}px` } as CSSProperties}>
         <aside className="panel file-panel">
           <div className="panel-header">
             <h3>{text.workspace.files}</h3>
-            <p>{workspace?.source === 'desktop' ? text.workspace.desktopMode : text.workspace.webMode}</p>
           </div>
 
           <div ref={fileListRef} className="file-list">
@@ -2021,7 +2371,8 @@ function App() {
                     style={getCategoryChipStyle(index + 1)}
                     onClick={() => setSelectedCategory(index + 1)}
                   >
-                    {`${group || getResolvedGroupName(index + 1)}(${index + 1})`}
+                    {group || getResolvedGroupName(index + 1)}
+                    <span className="chip-index">{index + 1}</span>
                   </button>
                 ))
               ) : (
@@ -2029,7 +2380,7 @@ function App() {
               )}
               {workspace && getVisibleGroupNames().length < 9 ? (
                 <button type="button" className="chip chip-selectable chip-add" onClick={addGroup}>
-                  +
+                  <Plus aria-hidden="true" />
                 </button>
               ) : null}
             </div>
@@ -2038,7 +2389,7 @@ function App() {
               <div className="group-edit-list">
                 {getVisibleGroupNames().map((group, index) => (
                   <label key={`group-edit-${index}`} className="group-edit-row">
-                    <span>{index + 1}</span>
+                    <span className="group-edit-index" style={getCategoryChipStyle(index + 1)}>{index + 1}</span>
                     <input
                       value={group}
                       onFocus={() => {
@@ -2062,7 +2413,7 @@ function App() {
                       aria-label={`删除分组 ${index + 1}`}
                       title={canDeleteGroup(index) ? `删除分组 ${index + 1}` : '仅空分组可删除，且至少保留一个分组'}
                     >
-                      -
+                      <Minus aria-hidden="true" />
                     </button>
                   </label>
                 ))}
@@ -2099,13 +2450,26 @@ function App() {
           </div>
         </aside>
 
+        <div
+          className="panel-resizer"
+          onPointerDown={(event) => startPanelResize(event, 'file')}
+          onKeyDown={(event) => handlePanelResizeKey(event, 'file')}
+          role="separator"
+          tabIndex={0}
+          aria-orientation="vertical"
+          aria-label="调整工作区文件宽度"
+          aria-valuemin={180}
+          aria-valuemax={420}
+          aria-valuenow={Math.round(filePanelWidth)}
+        />
+
         <section className="panel preview-panel">
           <div className="panel-header">
             <div>
               <h3>{text.preview.title}</h3>
-               <p>{activeFileImageSrc ? text.preview.imageMatched : status}</p>
+              <p>{activeFileImageSrc ? text.preview.imageMatched : status}</p>
             </div>
-            <div className="preview-toolbar">
+            <div className={isCheckMode ? 'preview-toolbar is-check-mode' : 'preview-toolbar'}>
               <div className="preview-help-wrap">
                 <button
                   type="button"
@@ -2125,8 +2489,14 @@ function App() {
                 </div>
               </div>
               <div className="preview-zoom-cluster">
-                <button type="button" className="ghost-button preview-reset-button" onClick={fitPreview}>
-                  {text.preview.fit}
+                <button
+                  type="button"
+                  className="ghost-button preview-reset-button"
+                  onClick={fitPreview}
+                  aria-label={text.preview.fit}
+                  title={text.preview.fit}
+                >
+                  <Maximize2 aria-hidden="true" />
                 </button>
                 <div className="preview-zoom-group">
                   <button type="button" className="ghost-button preview-zoom-button" onClick={() => zoomPreview(-0.1)} aria-label="缩小">
@@ -2138,13 +2508,20 @@ function App() {
                   </button>
                 </div>
               </div>
-              <button
-                type="button"
-                className={isCheckMode ? 'export-button preview-check-button' : 'ghost-button preview-check-button'}
-                onClick={() => setIsCheckMode((current) => !current)}
-              >
-                {isCheckMode ? text.preview.checkModeOn : text.preview.checkModeOff}
-              </button>
+              <div className="preview-check-cluster">
+                <button
+                  type="button"
+                  className={isCheckMode ? 'export-button preview-check-button' : 'ghost-button preview-check-button'}
+                  onClick={() => setIsCheckMode((current) => !current)}
+                >
+                  {isCheckMode ? text.preview.checkModeOn : text.preview.checkModeOff}
+                </button>
+                {isCheckMode ? (
+                  <button type="button" className="ghost-button reading-mode-button" onClick={toggleReadingMode}>
+                    {readingMode === 'vertical' ? text.labels.readingVertical : text.labels.readingHorizontal}
+                  </button>
+                ) : null}
+              </div>
             </div>
           </div>
 
@@ -2258,12 +2635,13 @@ function App() {
         </section>
 
         <div
-          className="label-panel-resizer"
-          onPointerDown={(event) => {
-            labelPanelResizeStateRef.current = { startX: event.clientX, startWidth: labelPanelWidth }
-            document.body.style.cursor = 'col-resize'
-            document.body.style.userSelect = 'none'
-          }}
+          className="panel-resizer"
+          onPointerDown={(event) => startPanelResize(event, 'label')}
+          onKeyDown={(event) => handlePanelResizeKey(event, 'label')}
+          tabIndex={0}
+          aria-valuemin={240}
+          aria-valuemax={720}
+          aria-valuenow={Math.round(labelPanelWidth)}
           role="separator"
           aria-orientation="vertical"
           aria-label="调整翻译内容宽度"
@@ -2275,11 +2653,7 @@ function App() {
               <h3>{text.labels.title}</h3>
               <p>{activeFile ? text.labels.lineCount(activeFile.labels.length) : text.labels.selectedFileEmpty}</p>
             </div>
-            {isCheckMode ? (
-              <button type="button" className="ghost-button" onClick={toggleReadingMode}>
-                {readingMode === 'vertical' ? text.labels.readingVertical : text.labels.readingHorizontal}
-              </button>
-            ) : null}
+
           </div>
 
           {activeFile ? (
@@ -2295,7 +2669,10 @@ function App() {
                   >
                       <div className="label-item-top label-item-row">
                         <span className="label-index">#{label.id}</span>
-                        <span className="label-category" style={{ color: getCategoryColor(label.category) }}>{getGroupDisplayName(label.category)}</span>
+                        <span className="label-category" style={getCategoryChipStyle(label.category)}>
+                          <span className="label-category-name">{getResolvedGroupName(label.category)}</span>
+                          <span className="label-category-index">{label.category}</span>
+                        </span>
                         <span className="label-item-text">{label.text || text.labels.emptyText}</span>
                       </div>
                     </button>
@@ -2313,9 +2690,9 @@ function App() {
                 </div>
                 {activeLabel ? (
                   <>
-                    <div className="detail-grid">
-                      <span>X {activeLabel.xPercent.toFixed(3)}</span>
-                      <span>Y {activeLabel.yPercent.toFixed(3)}</span>
+                    <div className="label-position-row">
+                      <span className="label-position-pill is-x">X {activeLabel.xPercent.toFixed(3)}</span>
+                      <span className="label-position-pill is-y">Y {activeLabel.yPercent.toFixed(3)}</span>
                     </div>
                     <label className="label-category-select-row">
                       <span>{text.labels.category}</span>
@@ -2376,9 +2753,11 @@ function App() {
                     </div>
                     <div className="editor-actions">
                       <button type="button" className="ghost-button" onClick={handleSaveLocal}>
+                        <Save aria-hidden="true" />
                         {isDesktop ? text.labels.saveDesktop : text.labels.saveBrowser}
                       </button>
                       <button type="button" className="export-button" onClick={handleExport}>
+                        <Download aria-hidden="true" />
                         {text.labels.exportTxt}
                       </button>
                     </div>

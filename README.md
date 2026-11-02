@@ -34,6 +34,12 @@ LabelPlusX 是一个现代化、多平台的 LabelPlus 客户端，面向漫画�
 - Tauri 模式下可从项目文件夹新建工作区
 - 桌面端自动生成 `translation.txt` 风格的工作文件
 - 保留分组定义与备注信息
+- 顶部紧凑工具栏提供新建、导入和 Web 图片关联
+- 三栏布局支持拖拽左右分隔条调整文件栏和翻译栏宽度，聚焦分隔条后可用左右方向键微调
+- 调宽时为画布保留至少 320px；窗口宽度小于 960px 时改为可滚动的纵向布局
+- 文件和翻译列表采用紧凑行，长翻译在列表中省略显示，编辑区保留完整文本；支持可见键盘焦点和系统减少动态效果偏好
+- 滚动条使用主题色细轨样式，按钮采用药丸圆角
+- 内置配色来自 Catppuccin、Nord、Gruvbox、Rosé Pine、Tokyo Night、Dracula，可在设置中切换并跟随明暗模式
 
 ### 图片预览
 
@@ -179,6 +185,8 @@ npm run tauri build
 ### GitHub Pages
 
 Web 版本可通过 `.github/workflows/pages.yml` 自动部署到 GitHub Pages。
+
+Pages 工作流通过 `VITE_BASE_PATH=/LabelPlusX/` 设置部署路径。React 中引用 `public/` 下的静态资源时，应使用 `import.meta.env.BASE_URL` 拼接资源路径，确保主界面和设置面板的 logo 在子路径部署时正常加载。
 
 ### Docker
 
