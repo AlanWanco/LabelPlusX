@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import type { ChangeEvent, CSSProperties, MouseEvent as ReactMouseEvent } from 'react'
-import { ALargeSmall, ArrowLeft, ChevronRight, CircleHelp, Download, FolderOpen, Image as ImageIcon, Keyboard, Maximize2, Minus, Moon, Palette, Plus, Save, Settings, SunMedium, TextCursorInput, Trash2, Type, ZoomIn } from 'lucide-react'
+import { ALargeSmall, ArrowLeft, ChevronRight, CircleHelp, Download, FolderOpen, Image as ImageIcon, Keyboard, Maximize2, Minus, Moon, Palette, Plus, Save, Settings, SunMedium, SunMoon, TextCursorInput, Trash2, Type, ZoomIn } from 'lucide-react'
 import './App.css'
 import packageJson from '../package.json'
 import {
@@ -2127,7 +2127,10 @@ function App() {
                 </div>
                 <div className="settings-theme-divider" aria-hidden="true" />
                 <div className="settings-theme-row">
-                  <span className="settings-theme-label">{text.settings.themeMode}</span>
+                  <span className="settings-row-label">
+                    <SunMoon className="settings-section-icon" aria-hidden="true" />
+                    <span>{text.settings.themeMode}</span>
+                  </span>
                   <div className="theme-mode-options" role="group" aria-label={text.settings.themeMode}>
                     <button
                       type="button"
