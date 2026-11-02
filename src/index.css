@@ -11,6 +11,8 @@
   --accent-strong: #2563eb;
   --accent-soft: rgba(124, 58, 237, 0.14);
   --border-strong: rgba(148, 163, 184, 0.4);
+  --shadow-panel: 0 12px 26px -24px rgba(15, 23, 42, 0.45);
+  --shadow-pop: 0 28px 56px -30px rgba(15, 23, 42, 0.5);
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI',
     sans-serif;
@@ -26,9 +28,9 @@
 
 :root[data-theme='dark'] {
   color-scheme: dark;
-  --bg: #09111f;
-  --panel: #0f172a;
-  --surface: #162033;
+  --bg: #11192c;
+  --panel: #020b1b;
+  --surface: #1a2437;
   --border: rgba(148, 163, 184, 0.16);
   --text: #cbd5e1;
   --text-strong: #f8fafc;
@@ -36,7 +38,9 @@
   --accent: #8b5cf6;
   --accent-strong: #38bdf8;
   --accent-soft: rgba(56, 189, 248, 0.14);
-  --border-strong: rgba(148, 163, 184, 0.32);
+  --border-strong: color-mix(in srgb, var(--text) 10%, var(--bg));
+  --shadow-panel: inset 0 1px 0 rgba(255, 255, 255, 0.045), 0 16px 30px -24px #000;
+  --shadow-pop: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 32px 64px -30px #000;
   background: var(--bg);
 }
 
@@ -62,11 +66,11 @@
 
 [data-theme='dark'][data-palette='default'],
 [data-theme='dark'] [data-palette='default'] {
-  --bg: #09111f;
-  --panel: #0f172a;
-  --surface: #162033;
+  --bg: #11192c;
+  --panel: #020b1b;
+  --surface: #1a2437;
   --border: rgba(148, 163, 184, 0.16);
-  --border-strong: rgba(148, 163, 184, 0.32);
+  --border-strong: color-mix(in srgb, var(--text) 10%, var(--bg));
   --text: #cbd5e1;
   --text-strong: #f8fafc;
   --text-muted: #94a3b8;
@@ -91,14 +95,14 @@
 
 [data-theme='dark'][data-palette='catppuccin'],
 [data-theme='dark'] [data-palette='catppuccin'] {
-  --bg: #11111b;
-  --panel: #1e1e2e;
-  --surface: #181825;
+  --bg: #1e1e2e;
+  --panel: #0b0b17;
+  --surface: #292937;
   --text: #bac2de;
   --text-strong: #cdd6f4;
   --text-muted: color-mix(in srgb, var(--text) 62%, var(--bg));
   --border: color-mix(in srgb, var(--text) 15%, var(--bg));
-  --border-strong: color-mix(in srgb, var(--text) 28%, var(--bg));
+  --border-strong: color-mix(in srgb, var(--text) 10%, var(--bg));
   --accent: #cba6f7;
   --accent-strong: #89b4fa;
   --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
@@ -120,14 +124,14 @@
 
 [data-theme='dark'][data-palette='nord'],
 [data-theme='dark'] [data-palette='nord'] {
-  --bg: #2e3440;
-  --panel: #3b4252;
-  --surface: #434c5e;
+  --bg: #3b4252;
+  --panel: #2a303b;
+  --surface: #454e60;
   --text: #d8dee9;
   --text-strong: #eceff4;
   --text-muted: color-mix(in srgb, var(--text) 62%, var(--bg));
   --border: color-mix(in srgb, var(--text) 15%, var(--bg));
-  --border-strong: color-mix(in srgb, var(--text) 28%, var(--bg));
+  --border-strong: color-mix(in srgb, var(--text) 10%, var(--bg));
   --accent: #88c0d0;
   --accent-strong: #81a1c1;
   --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
@@ -149,14 +153,14 @@
 
 [data-theme='dark'][data-palette='gruvbox'],
 [data-theme='dark'] [data-palette='gruvbox'] {
-  --bg: #1d2021;
-  --panel: #282828;
-  --surface: #32302f;
+  --bg: #282828;
+  --panel: #191c1d;
+  --surface: #353332;
   --text: #ebdbb2;
   --text-strong: #fbf1c7;
   --text-muted: color-mix(in srgb, var(--text) 56%, var(--bg));
   --border: color-mix(in srgb, var(--text) 15%, var(--bg));
-  --border-strong: color-mix(in srgb, var(--text) 28%, var(--bg));
+  --border-strong: color-mix(in srgb, var(--text) 10%, var(--bg));
   --accent: #fe8019;
   --accent-strong: #83a598;
   --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
@@ -178,14 +182,14 @@
 
 [data-theme='dark'][data-palette='rose-pine'],
 [data-theme='dark'] [data-palette='rose-pine'] {
-  --bg: #232136;
-  --panel: #2a273f;
+  --bg: #2c2941;
+  --panel: #1f1d32;
   --surface: #393552;
   --text: #e0def4;
   --text-strong: #e0def4;
   --text-muted: color-mix(in srgb, var(--text) 56%, var(--bg));
   --border: color-mix(in srgb, var(--text) 15%, var(--bg));
-  --border-strong: color-mix(in srgb, var(--text) 28%, var(--bg));
+  --border-strong: color-mix(in srgb, var(--text) 10%, var(--bg));
   --accent: #c4a7e7;
   --accent-strong: #9ccfd8;
   --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
@@ -207,14 +211,14 @@
 
 [data-theme='dark'][data-palette='tokyo-night'],
 [data-theme='dark'] [data-palette='tokyo-night'] {
-  --bg: #16161e;
-  --panel: #1a1b26;
+  --bg: #1d1e29;
+  --panel: #12111a;
   --surface: #292e42;
   --text: #a9b1d6;
   --text-strong: #c0caf5;
   --text-muted: color-mix(in srgb, var(--text) 68%, var(--bg));
   --border: color-mix(in srgb, var(--text) 15%, var(--bg));
-  --border-strong: color-mix(in srgb, var(--text) 28%, var(--bg));
+  --border-strong: color-mix(in srgb, var(--text) 10%, var(--bg));
   --accent: #7aa2f7;
   --accent-strong: #bb9af7;
   --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
@@ -236,14 +240,14 @@
 
 [data-theme='dark'][data-palette='dracula'],
 [data-theme='dark'] [data-palette='dracula'] {
-  --bg: #21222c;
-  --panel: #282a36;
+  --bg: #282a36;
+  --panel: #1d1e28;
   --surface: #343746;
   --text: #f8f8f2;
   --text-strong: #f8f8f2;
   --text-muted: color-mix(in srgb, var(--text) 50%, var(--bg));
   --border: color-mix(in srgb, var(--text) 15%, var(--bg));
-  --border-strong: color-mix(in srgb, var(--text) 28%, var(--bg));
+  --border-strong: color-mix(in srgb, var(--text) 10%, var(--bg));
   --accent: #bd93f9;
   --accent-strong: #8be9fd;
   --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);

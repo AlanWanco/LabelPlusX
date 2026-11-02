@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import type { ChangeEvent, CSSProperties, MouseEvent as ReactMouseEvent } from 'react'
-import { ALargeSmall, ArrowLeft, ChevronRight, CircleHelp, Download, FolderOpen, Image as ImageIcon, Keyboard, Maximize2, Minus, Moon, Palette, Plus, Save, Settings, SunMedium, SunMoon, TextCursorInput, Trash2, Type, ZoomIn } from 'lucide-react'
+import { ALargeSmall, ArrowLeft, ChevronRight, CircleHelp, Download, Files, FolderOpen, Fullscreen, Image as ImageIcon, Keyboard, Languages, Layers, Minus, Moon, Palette, Plus, Save, ScanEye, Settings, StickyNote, SunMedium, SunMoon, Tag, TextCursorInput, Trash2, ZoomIn } from 'lucide-react'
 import './App.css'
 import packageJson from '../package.json'
 import {
@@ -24,6 +24,7 @@ import {
 } from './lib/labelplus'
 import { text } from './lib/i18n'
 import { defaultPalette, isPaletteId, paletteOptions } from './lib/palettes'
+import { useSlidingIndicator } from './lib/slidingIndicator'
 import type { LabelEntry, PaletteId, ReadingMode, ThemeMode, WorkspaceData } from './types'
 
 const themeStorageKey = 'labelplusx-theme'
@@ -82,7 +83,7 @@ interface AppSettings {
   autoSave: boolean
   checkFontSize: number
   groupColors: string[]
-  labelFontSize: number
+  markerFontSize: number
   palette: PaletteId
   quickTexts: QuickTextItem[]
   uiScale: number
@@ -121,16 +122,16 @@ function getInitialTheme(): ThemeMode {
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
 }
 
-const defaultLabelFontSize = 16
-const minLabelFontSize = 12
-const maxLabelFontSize = 22
+const defaultMarkerFontSize = 16
+const minMarkerFontSize = 12
+const maxMarkerFontSize = 22
 
 function createDefaultSettings(): AppSettings {
   return {
     autoSave: true,
     checkFontSize: 16,
     groupColors: [...categoryColors],
-    labelFontSize: defaultLabelFontSize,
+    markerFontSize: defaultMarkerFontSize,
     palette: defaultPalette,
     quickTexts: defaultQuickTexts,
     uiScale: 1,
@@ -156,12 +157,15 @@ function getInitialSettings(): AppSettings {
       return createDefaultSettings()
     }
 
-    const parsed = JSON.parse(raw) as Partial<AppSettings>
+    const parsed = JSON.parse(raw) as Partial<AppSettings> & { labelFontSize?: number }
     return {
       autoSave: parsed.autoSave ?? true,
       checkFontSize: Math.min(24, Math.max(12, parsed.checkFontSize ?? 16)),
       groupColors: normalizeGroupColors(parsed.groupColors),
-      labelFontSize: Math.min(maxLabelFontSize, Math.max(minLabelFontSize, parsed.labelFontSize ?? defaultLabelFontSize)),
+      markerFontSize: Math.min(
+        maxMarkerFontSize,
+        Math.max(minMarkerFontSize, parsed.markerFontSize ?? parsed.labelFontSize ?? defaultMarkerFontSize),
+      ),
       palette: isPaletteId(parsed.palette) ? parsed.palette : defaultPalette,
       quickTexts: Array.isArray(parsed.quickTexts) && parsed.quickTexts.length > 0
         ? parsed.quickTexts
@@ -216,6 +220,7 @@ function App() {
   const pendingDragHistoryPointerIdRef = useRef<number | null>(null)
   const hasManualPreviewTransformRef = useRef(false)
   const fileListRef = useRef<HTMLDivElement | null>(null)
+  const labelListRef = useRef<HTMLDivElement | null>(null)
   const newWorkspaceImageInputRef = useRef<HTMLInputElement | null>(null)
   const labelFileInputRef = useRef<HTMLInputElement | null>(null)
   const quickTextPanelRef = useRef<HTMLDivElement | null>(null)
@@ -1145,6 +1150,13 @@ function App() {
     setReadingMode((current) => (current === 'vertical' ? 'horizontal' : 'vertical'))
   }
 
+  function changeMarkerFontSize(delta: number) {
+    setSettings((current) => ({
+      ...current,
+      markerFontSize: Math.min(maxMarkerFontSize, Math.max(minMarkerFontSize, current.markerFontSize + delta)),
+    }))
+  }
+
   function runCircularReveal(origin: HTMLElement, update: () => void, point?: { x: number; y: number }) {
     const viewTransitionDocument = document as Document & {
       startViewTransition?: (callback: () => void) => { finished: Promise<void> }
@@ -1885,6 +1897,9 @@ function App() {
     activeItem?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }, [activeFileName])
 
+  useSlidingIndicator(fileListRef, '.file-item.active', activeFileName, workspace?.files.length ?? 0)
+  useSlidingIndicator(labelListRef, '.label-item.active', `${activeFile?.name ?? ''}:${activeLabelId ?? ''}`, activeFile?.labels.length ?? 0)
+
   useEffect(() => {
     if (!workspace || workspace.source !== 'desktop') {
       return
@@ -2155,7 +2170,7 @@ function App() {
               </div>
 
               <div className="settings-section">
-                <div className="settings-row">
+                <div className="settings-scale-row">
                   <span className="settings-row-label">
                     <ZoomIn className="settings-section-icon" aria-hidden="true" />
                     <span>{text.settings.uiScale}</span>
@@ -2171,9 +2186,6 @@ function App() {
                     />
                     <strong>{uiScaleDraft}%</strong>
                   </div>
-                </div>
-                <div className="settings-scale-footer">
-                  <span className="settings-inline-hint">{text.settings.uiScaleHint}</span>
                   <button
                     type="button"
                     className="ghost-button settings-scale-apply"
@@ -2183,6 +2195,7 @@ function App() {
                     {text.settings.applyUiScale}
                   </button>
                 </div>
+                <span className="settings-inline-hint settings-scale-hint">{text.settings.uiScaleHint}</span>
               </div>
 
               <div className="settings-section">
@@ -2216,25 +2229,6 @@ function App() {
                       }}
                     />
                     <strong>{settings.checkFontSize}px</strong>
-                  </div>
-                </label>
-
-                <label className="settings-row">
-                  <span className="settings-row-label">
-                    <Type className="settings-section-icon" aria-hidden="true" />
-                    <span>{text.settings.labelFontSize}</span>
-                  </span>
-                  <div className="settings-range-wrap">
-                    <input
-                      type="range"
-                      min={minLabelFontSize}
-                      max={maxLabelFontSize}
-                      value={settings.labelFontSize}
-                      onChange={(event) => {
-                        setSettings((current) => ({ ...current, labelFontSize: Number(event.target.value) }))
-                      }}
-                    />
-                    <strong>{settings.labelFontSize}px</strong>
                   </div>
                 </label>
               </div>
@@ -2442,10 +2436,19 @@ function App() {
               {isBusy ? text.import.loading : text.import.title}
             </button>
             {!isDesktop ? (
-              <label className="toolbar-button" title={text.import.linkImagesHint}>
+              <label
+                className={workspace ? 'toolbar-button' : 'toolbar-button is-disabled'}
+                title={workspace ? text.import.linkImagesHint : text.import.linkImagesNeedsWorkspace}
+                aria-disabled={!workspace}
+                onClick={(event) => {
+                  if (!workspace) {
+                    event.preventDefault()
+                  }
+                }}
+              >
                 <ImageIcon aria-hidden="true" />
                 {text.import.linkImages}
-                <input className="hidden-file-input" type="file" accept="image/*" multiple onChange={handleImageFilesChange} disabled={isBusy} />
+                <input className="hidden-file-input" type="file" accept="image/*" multiple onChange={handleImageFilesChange} disabled={isBusy || !workspace} />
               </label>
             ) : null}
             <input
@@ -2477,10 +2480,14 @@ function App() {
       <main ref={workspaceLayoutRef} className="workspace-layout" style={{ '--file-panel-width': `${filePanelWidth}px`, '--label-panel-width': `${labelPanelWidth}px` } as CSSProperties}>
         <aside className="panel file-panel">
           <div className="panel-header">
-            <h3>{text.workspace.files}</h3>
+            <h3 className="panel-heading">
+              <Files className="heading-icon" aria-hidden="true" />
+              <span>{text.workspace.files}</span>
+            </h3>
           </div>
 
           <div ref={fileListRef} className="file-list">
+            <span className="sliding-indicator" aria-hidden="true" />
             {workspace?.files.length ? (
               workspace.files.map((file) => (
                 <button
@@ -2512,7 +2519,10 @@ function App() {
 
           <div className="workspace-meta">
             <div className="workspace-meta-head">
-              <h4>{text.workspace.groups}</h4>
+              <h4 className="panel-heading">
+                <Layers className="heading-icon" aria-hidden="true" />
+                <span>{text.workspace.groups}</span>
+              </h4>
               {workspace && getVisibleGroupNames().length < 9 ? (
                 <button
                   type="button"
@@ -2598,7 +2608,10 @@ function App() {
               </div>
             ) : null}
 
-            <h4>{text.workspace.comment}</h4>
+            <h4 className="panel-heading">
+              <StickyNote className="heading-icon" aria-hidden="true" />
+              <span>{text.workspace.comment}</span>
+            </h4>
             <textarea
               className="comment-box comment-editor"
               value={workspace?.comment ?? ''}
@@ -2643,11 +2656,40 @@ function App() {
 
         <section className="panel preview-panel">
           <div className="panel-header">
-            <div>
-              <h3>{text.preview.title}</h3>
-              <p>{activeFileImageSrc ? text.preview.imageMatched : status}</p>
+            <div className="panel-heading-row">
+              <h3 className="panel-heading">
+                <ImageIcon className="heading-icon" aria-hidden="true" />
+                <span>{text.preview.title}</span>
+              </h3>
+              <p className="panel-subtitle">{activeFileImageSrc ? text.preview.imageMatched : status}</p>
             </div>
             <div className={isCheckMode ? 'preview-toolbar is-check-mode' : 'preview-toolbar'}>
+              <div className="preview-marker-group" role="group" aria-label={text.preview.markerSize}>
+                <button
+                  type="button"
+                  className="ghost-button preview-marker-button"
+                  onClick={() => changeMarkerFontSize(-1)}
+                  aria-label={text.preview.markerSizeDown}
+                  title={text.preview.markerSizeDown}
+                  disabled={settings.markerFontSize <= minMarkerFontSize}
+                >
+                  <span aria-hidden="true">A−</span>
+                </button>
+                <span className="preview-marker-value" title={text.preview.markerSize}>
+                  {settings.markerFontSize}
+                </span>
+                <button
+                  type="button"
+                  className="ghost-button preview-marker-button"
+                  onClick={() => changeMarkerFontSize(1)}
+                  aria-label={text.preview.markerSizeUp}
+                  title={text.preview.markerSizeUp}
+                  disabled={settings.markerFontSize >= maxMarkerFontSize}
+                >
+                  <span aria-hidden="true">A+</span>
+                </button>
+              </div>
+              <span className="preview-toolbar-divider" aria-hidden="true" />
               <div className="preview-help-wrap">
                 <button
                   type="button"
@@ -2674,7 +2716,7 @@ function App() {
                   aria-label={text.preview.fit}
                   title={text.preview.fit}
                 >
-                  <Maximize2 aria-hidden="true" />
+                  <Fullscreen aria-hidden="true" />
                 </button>
                 <div className="preview-zoom-group">
                   <button type="button" className="ghost-button preview-zoom-button" onClick={() => zoomPreview(-0.1)} aria-label="缩小">
@@ -2690,9 +2732,11 @@ function App() {
                 <button
                   type="button"
                   className={isCheckMode ? 'export-button preview-check-button' : 'ghost-button preview-check-button'}
+                  aria-pressed={isCheckMode}
                   onClick={() => setIsCheckMode((current) => !current)}
                 >
-                  {isCheckMode ? text.preview.checkModeOn : text.preview.checkModeOff}
+                  <ScanEye aria-hidden="true" />
+                  <span>{isCheckMode ? text.preview.checkModeOn : text.preview.checkModeOff}</span>
                 </button>
                 {isCheckMode ? (
                   <button type="button" className="ghost-button reading-mode-button" onClick={toggleReadingMode}>
@@ -2742,7 +2786,15 @@ function App() {
                           }}
                         />
                       </div>
-                      <div className={arePreviewLabelsHidden ? 'marker-layer marker-layer-hidden' : 'marker-layer'}>
+                      <div
+                        className={arePreviewLabelsHidden ? 'marker-layer marker-layer-hidden' : 'marker-layer'}
+                        style={
+                          {
+                            '--marker-size': `${settings.markerFontSize * 2}px`,
+                            '--marker-font-size': `${settings.markerFontSize}px`,
+                          } as CSSProperties
+                        }
+                      >
                         {activeFile.labels.map((label) => (
                           <div key={label.id} className="marker-group" style={{ left: `${label.xPercent * 100}%`, top: `${label.yPercent * 100}%` }}>
                             <button
@@ -2827,16 +2879,20 @@ function App() {
 
         <aside className="panel label-panel">
           <div className="panel-header">
-            <div>
-              <h3>{text.labels.title}</h3>
-              <p>{activeFile ? text.labels.lineCount(activeFile.labels.length) : text.labels.selectedFileEmpty}</p>
+            <div className="panel-heading-row">
+              <h3 className="panel-heading">
+                <Languages className="heading-icon" aria-hidden="true" />
+                <span>{text.labels.title}</span>
+              </h3>
+              <p className="panel-subtitle">{activeFile ? text.labels.lineCount(activeFile.labels.length) : text.labels.selectedFileEmpty}</p>
             </div>
 
           </div>
 
           {activeFile ? (
             <>
-              <div className="label-list" style={{ fontSize: `${settings.labelFontSize}px` }}>
+              <div ref={labelListRef} className="label-list">
+                <span className="sliding-indicator" aria-hidden="true" />
                 {activeFile.labels.map((label) => (
                   <button
                     key={label.id}
@@ -2859,7 +2915,10 @@ function App() {
 
               <div className="label-detail">
                 <div className="label-detail-header">
-                  <h4>{text.labels.currentLabel}</h4>
+                  <h4 className="panel-heading">
+                    <Tag className="heading-icon" aria-hidden="true" />
+                    <span>{text.labels.currentLabel}</span>
+                  </h4>
                   {firstUntranslatedLabel ? (
                     <button type="button" className="ghost-button untranslated-jump-button" onClick={() => selectLabel(firstUntranslatedLabel)}>
                       {text.labels.untranslatedCount(untranslatedLabels.length)}
