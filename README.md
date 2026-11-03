@@ -8,6 +8,14 @@ LabelPlusX 是一个现代化、多平台的 LabelPlus 客户端，面向漫画�
 
 它兼容旧版 LabelPlus 的 `txt` 工作区格式，同时把原本偏传统、偏模式化的桌面流程，改造成一套同时支持桌面端和 Web 的直接交互式编辑体验。
 
+## 界面预览
+
+![浅色主题：工作区文件、图片预览与翻译列表](docs/screenshots/light-workspace.png)
+
+![深色主题：检查模式与日式竖版预览](docs/screenshots/dark-check-mode.png)
+
+![设置面板：配色、昼夜模式与界面缩放](docs/screenshots/settings.png)
+
 ## 支持目标
 
 - 基于 Tauri 的桌面端应用：macOS / Linux / Windows
